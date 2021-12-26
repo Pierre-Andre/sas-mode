@@ -10,12 +10,13 @@ ce module regroupe
 ;; Copyright (C) 1997-2021 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
+;; Author: Fabián E. Gallina <fgallina@gnu.org>
 ;; Author: A.J. Rossini
 ;; Author: Rodney A. Sparapani
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: avril 28, 2021
-;; Modified: avril 28, 2021
+;; Modified: december 28, 2021
 ;; Version: 0.1.0
 ;; Keywords: Symbol’s value as variable is void: finder-known-keywords
 ;; Homepage: https://github.com/
@@ -24,6 +25,20 @@ ce module regroupe
 ;; This file is not part of GNU Emacs.
 ;;
 ;;; Commentary:
+;; This is based upon Version 1.4 of SAS mode:
+;;;    sas-mode:  indent, run etc, SAS programs.
+;;;  Author:   Tom Cook
+;;;            Dept. of Biostatistics
+;;;            University of Wisconsin - Madison
+;;;            Madison, WI 53706
+;;;            cook@biostat.wisc.edu
+;;;
+;;;  Acknowledgements:
+;;;  Menu code for XEmacs/Lucid emacs and startup mods
+;;;  contributed by arossini@biostats.hmc.psu.edu
+;;;
+;;; Last change: 2/1/95
+;;; Last change: 01/15/02
 ;;
 ;;  Description
 ;;
@@ -142,7 +157,7 @@ where is the program 2          ---->      +
 _Global_
 SAS buffer "program1.sas"
 where is the program 1     \
-(sasbis-mode)                  \
+(sasbis-mode)               \
                              \
 SAS buffer "program2.sas"     \         SAS process
 where is the program 2      ---\---->      +
@@ -152,11 +167,11 @@ Moreover the dedicated buffer have a name chosen as =*sas output[program1]*=
 (and =*sas log[program1]*=).
 
 *** output+error in the same buffer
-pour avoir que des erreurs
+It is possible to clean up the comint buffer and to have only results
 https://documentation.sas.com/doc/da/pgmsascdc/9.4_3.5/basess/p0rgzxi5r1euj0n14epck6v9l2hm.htm
 =options nosource nonotes errors=0;=
 
-avec cela on peut faire du comint de base et via tramp.
+with that, it is possible to make sas via tramp with a single comint buffer
 *** functions to start process with std error
 the composition chain to start a comint buffer with output/errors separated.
 These functions are the same as in comint but the stderr argument.
@@ -533,7 +548,7 @@ that they are prioritized when looking for executables."
 #+end_src
 sasbis-shell--interpreter sasbis-shell--interpreter-args
 **** Sources, doc
-***** Basique
+****** Basique
 qqch de tres basique:
 #+begin_src emacs-lisp :results none
 (defun run-sasbis ()
@@ -858,84 +873,6 @@ If current buffer is in `inferior-sasbis-mode', return it."
           (and global-running global-proc-buffer-name)))))
 #+end_src
 **** movement and searches
-***** doc python
-we need to find the beginning of block
-
-sasbis-nav-forward-statement
-#+begin_src emacs-lisp
-(defun sasbis-nav-forward-statement (&optional arg)
-  "Move forward to next statement.
-With ARG, repeat.  With negative argument, move ARG times
-backward to previous statement."
-  (interactive "^p")
-  (or arg (setq arg 1))
-  (while (> arg 0)
-    (sasbis-nav-end-of-statement)
-    (sasbis-util-forward-comment)
-    (sasbis-nav-beginning-of-statement)
-    (setq arg (1- arg)))
-  (while (< arg 0)
-    (sasbis-nav-beginning-of-statement)
-    (sasbis-util-forward-comment -1)
-    (sasbis-nav-beginning-of-statement)
-    (setq arg (1+ arg))))
-#+end_src
-#+begin_src emacs-lisp
-(defun sasbis-util-forward-comment (&optional direction)
-  "Sasbis mode specific version of `forward-comment'.
-Optional argument DIRECTION defines the direction to move to."
-  (let ((comment-start (sasbis-syntax-context 'comment))
-        (factor (if (< (or direction 0) 0)
-                    -99999
-                  99999)))
-    (when comment-start
-      (goto-char comment-start))
-    (forward-comment factor)))
-#+end_src
-#+begin_src emacs-lisp
-(defun sasbis-nav-end-of-statement (&optional noend)
-  "Move to end of current statement.
-Optional argument NOEND is internal and makes the logic to not
-jump to the end of line when moving forward searching for the end
-of the statement."
-  (interactive "^")
-  (let (string-start bs-pos (last-string-end 0))
-    (while (and (or noend (goto-char (line-end-position)))
-                (not (eobp))
-                (cond ((setq string-start (sasbis-syntax-context 'string))
-                       ;; The assertion can only fail if syntax table
-                       ;; text properties and the `syntax-ppss' cache
-                       ;; are somehow out of whack.  This has been
-                       ;; observed when using `syntax-ppss' during
-                       ;; narrowing.
-                       (cl-assert (>= string-start last-string-end)
-                                  :show-args
-                                  "\
-Overlapping strings detected (start=%d, last-end=%d)")
-                       (goto-char string-start)
-                       (if (sasbis-syntax-context 'paren)
-                           ;; Ended up inside a paren, roll again.
-                           (sasbis-nav-end-of-statement t)
-                         ;; This is not inside a paren, move to the
-                         ;; end of this string.
-                         (goto-char (+ (point)
-                                       (sasbis-syntax-count-quotes
-                                        (char-after (point)) (point))))
-                         (setq last-string-end
-                               (or (re-search-forward
-                                    (rx (syntax string-delimiter)) nil t)
-                                   (goto-char (point-max))))))
-                      ((sasbis-syntax-context 'paren)
-                       ;; The statement won't end before we've escaped
-                       ;; at least one level of parenthesis.
-                       (condition-case err
-                           (goto-char (scan-lists (point) 1 -1))
-                         (scan-error (goto-char (nth 3 err)))))
-                      ((setq bs-pos (sasbis-info-line-ends-backslash-p))
-                       (goto-char bs-pos)
-                       (forward-line 1))))))
-  (point-marker))
-#+end_src
 ***** comment from syntax
 #+begin_src emacs-lisp :tangle sasbis.el
 (eval-and-compile
@@ -963,7 +900,6 @@ character address of the specified TYPE."
       (_ nil))))
 #+end_src
 ***** movements
-
 #+begin_src emacs-lisp :tangle sasbis.el
 (defun sasbis-beginning-of-sas-statement ()
 "Move point to beginning of current sas statement."
@@ -1039,29 +975,6 @@ The optional argument ARG is a number that indicates the
       (forward-char -1))))
 #+end_src
 
-**** doc: elpy
- (define-key map (kbd "<C-return>") 'elpy-shell-send-statement-and-step)
- elpy-shell-send-statement-and-step -> python-shell-send-string + python-nav-forward-statement
-#+begin_src emacs-lisp
-(defun python-shell-send-string (string &optional process msg)
-  "Send STRING to inferior Python PROCESS.
-When optional argument MSG is non-nil, forces display of a
-user-friendly message if there's no process running; defaults to
-t when called interactively."
-  (interactive
-   (list (read-string "Python command: ") nil t))
-  (let ((process (or process (python-shell-get-process-or-error msg))))
-    (if (string-match ".\n+." string)   ;Multiline.
-        (let* ((temp-file-name (python-shell--save-temp-file string))
-               (file-name (or (buffer-file-name) temp-file-name)))
-          (python-shell-send-file file-name process temp-file-name t))
-      (comint-send-string process string)
-      (when (or (not (string-match "\n\\'" string))
-                (string-match "\n[ \t].*\n?\\'" string))
-        (comint-send-string process "\n")))))
-#+end_src
-***** python-nav-forward-statement
-python-nav-forward-statement -> python-nav-end-of-statement + python-util-forward-comment + python-nav-beginning-of-statement
 *** variables
 #+begin_src emacs-lisp :tangle sasbis.el
 (defcustom ess-sasbis-tab-stop-list

@@ -38,3 +38,5 @@ It could be used with ob-sas.el to make sas src block in org mode files. As I do
     "Keymap for `sasbis-mode'.")
    #+end_src
    control-return in a middle of a data step or a proc step will send the whole data step or proc step to SAS.
+** Config
+The custom variable =sasbis-shell-interpreter= is  =sas= but it can be useful to point to sas.
