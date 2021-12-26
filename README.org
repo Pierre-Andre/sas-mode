@@ -1,2 +1,40 @@
-# sas-mode
+* sasbis a sas mode for emacs
 sas mode for emacs
+** Installation
+   1. Download (or clone) =sasbis.el= and put it in your emacs
+      directory (for example the directory
+      =/home/foouser/.emacs.d/lisp=)
+
+   2. To use SAS as another babel language, add the following to your
+      =.emacs=
+      #+begin_src emacs-lisp
+      (load "/home/foouser/.emacs.d/lisp/sasbis.el")
+      (require 'sasbis)
+      #+end_src
+      If you use ESS (for R) and sasbis you should disable the automatic loading of SAS-mode from ESS and load sasbis after:
+      #+begin_src emacs-lisp
+      (require 'ess)
+      (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist))
+      (load "/home/foouser/.emacs.d/lisp/sasbis.el")
+      (require 'sasbis)
+      #+end_src
+** Philosophy
+ESS does not update SAS-mode anymore. To have syntaxic coloration, session (as in python-mode) and keyboard shortcuts as in elpy or ESS, I have made a compilation of these sources into this sasbis.el.
+It could be used with ob-sas.el to make sas src block in org mode files. As I don't have windows I don't know if it works on windows.
+** Examples
+1. Start sas
+   In a file with sasbis mode enabled, start SAS with =run-sasbis= (=M-x run-sasbis=)
+2. Submit commands
+   sasbis comes with several shortcuts to submit sas commands
+   #+begin_src emacs-lisp
+   (defvar sasbis-mode-map
+    (let ((map (make-sparse-keymap)))
+      (define-key map "\C-c\C-r"   #'sasbis-shell-send-region)
+      (define-key map "\C-c\C-b"   #'sasbis-shell-send-buffer)
+      (define-key map "\C-c\C-j"   #'sasbis-shell-send-line)
+      (define-key map [(control return)] #'sasbis-shell-send-dwim)
+      (define-key map "\C-c\C-q"   #'sasbis-exit)
+      map)
+    "Keymap for `sasbis-mode'.")
+   #+end_src
+   control-return in a middle of a data step or a proc step will send the whole data step or proc step to SAS.

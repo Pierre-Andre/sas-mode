@@ -7,13 +7,16 @@ ce module regroupe
 #+begin_src emacs-lisp :tangle sasbis.el
 ;;; sasbis.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2021 Pierre-André Cornillon
+;; Copyright (C) 1997-2021 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
+;; Author: A.J. Rossini
+;; Author: Rodney A. Sparapani
+;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: avril 28, 2021
 ;; Modified: avril 28, 2021
-;; Version: 0.0.1
+;; Version: 0.1.0
 ;; Keywords: Symbol’s value as variable is void: finder-known-keywords
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "24.3"))
