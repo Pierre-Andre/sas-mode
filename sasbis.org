@@ -1,4 +1,5 @@
 #+TITLE: Sasbis
+#+STARTUP: show2levels
 * sasbis.el
 ce module regroupe
 1. un sas-mode qui permet d'editer du SAS avec coloration syntaxique
