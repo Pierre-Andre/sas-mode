@@ -1,12 +1,16 @@
 ;;; sasbis.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2021 Pierre-André Cornillon
+;; Copyright (C) 1997-2021 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
+;; Author: Fabián E. Gallina <fgallina@gnu.org>
+;; Author: A.J. Rossini
+;; Author: Rodney A. Sparapani
+;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: avril 28, 2021
-;; Modified: avril 28, 2021
-;; Version: 0.0.1
+;; Modified: december 28, 2021
+;; Version: 0.1.0
 ;; Keywords: Symbol’s value as variable is void: finder-known-keywords
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "24.3"))
@@ -14,6 +18,20 @@
 ;; This file is not part of GNU Emacs.
 ;;
 ;;; Commentary:
+;; This is based upon Version 1.4 of SAS mode:
+;;;    sas-mode:  indent, run etc, SAS programs.
+;;;  Author:   Tom Cook
+;;;            Dept. of Biostatistics
+;;;            University of Wisconsin - Madison
+;;;            Madison, WI 53706
+;;;            cook@biostat.wisc.edu
+;;;
+;;;  Acknowledgements:
+;;;  Menu code for XEmacs/Lucid emacs and startup mods
+;;;  contributed by arossini@biostats.hmc.psu.edu
+;;;
+;;; Last change: 2/1/95
+;;; Last change: 01/15/02
 ;;
 ;;  Description
 ;;
@@ -33,6 +51,10 @@
   "Default arguments for the Sas interpreter."
   :type 'string
   :group 'sasbis)
+(defcustom sasbis-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
+  "Default arguments for the Sas interpreter."
+  :type 'string
+  :group 'sasbis)
 
 (defcustom sasbis-shell-buffer-name "Sas"
   "Default buffer name for Sas interpreter."
@@ -42,13 +64,26 @@
 
 ;; The next two are ``the inside of [...] in a regexp'' to be used in
 ;; (skip-chars-(for|back)ward SAS-..-chars)
-(defcustom sas-white-chars " \t\n\f"
+(defcustom sasbis-white-chars " \t\n\f"
   "This does NOT escape blanks (RMH, 2000/03/20)."
   :group 'sasbis
   :type  'string)
 
-(defcustom sas-comment-chars (concat sas-white-chars ";")
-  "Doc?"
+(defcustom sasbis-delay-kill-buffer 800
+  "Delay in millisecs between endsas; and killing windows"
+  :group 'sasbis
+  :type  'integer)
+
+(defcustom sasbis-user-library nil
+  "Name of SAS user library, if none no user library is created, if nil a temp dir is created, else an existing dir is used"
+  :group 'sasbis
+  :type  'string)
+(defcustom sasbis-realsession nil
+  "If nil a fake session is used, else a comint buffer is created"
+  :group 'sasbis
+  :type  'string)
+(defcustom sasbis-sas-windows nil
+  "If nil in a fake session windows shell syntax is used to execute sas program, else unix/linux syntax is used"
   :group 'sasbis
   :type  'string)
 
@@ -234,12 +269,14 @@ process buffer for a list of commands.)"
         (y-or-n-p "Make dedicated process? ")
         (= (prefix-numeric-value current-prefix-arg) 4))
      (list (sasbis-shell-calculate-command) nil t)))
+  (if sasbis-realsession
   (let ((buffer
          (sasbis-shell-make-comint
           (or cmd (sasbis-shell-calculate-command))
           (sasbis-shell-get-process-name dedicated) dedicated show)))
     (pop-to-buffer buffer)
-    (get-buffer-process buffer)))
+    (get-buffer-process buffer))
+  (sasbis-make-fakesession 't sasbis-user-library)))
 
 (defun sasbis-shell-calculate-command ()
 "Calculate the string used to execute the inferior Sas process."
@@ -312,6 +349,23 @@ Log`sasbis-shell-buffer-name'[`buffer-name'] else returns the value
 of `sasbis-shell-buffer-name'."
   (if dedicated
       (format "Log-%s[%s]" sasbis-shell-buffer-name (buffer-name))
+   (format "Log-%s"  sasbis-shell-buffer-name)))
+
+(defun sasbis-shell-command-get-process-name (dedicated)
+"Calculate the appropriate process name for inferior Sas process.
+If DEDICATED is t returns a string with the form
+`sasbis-shell-buffer-name_buffer-name' else returns the value
+of `sasbis-shell-buffer-name'."
+  (if dedicated
+      (format "%s_%s" sasbis-shell-buffer-name (buffer-name))
+    sasbis-shell-buffer-name))
+(defun sasbis-shell-command-get-errorbuffer-name (dedicated)
+"Calculate the appropriate  name for error bufffer .
+If DEDICATED is t returns a string with the form
+Log`sasbis-shell-buffer-name_buffer-name' else returns the value
+of `sasbis-shell-buffer-name'."
+  (if dedicated
+      (format "Log-%s_%s" sasbis-shell-buffer-name (buffer-name))
    (format "Log-%s"  sasbis-shell-buffer-name)))
 
 (defun sasbis-shell-make-comint (cmd proc-name &optional dedicated  show internal)
@@ -399,6 +453,19 @@ that they are prioritized when looking for executables."
   :type '(repeat string)
   :group 'sasbis)
 
+(defun sasbis-make-fakesession  (&optional dedicated sasbis-user-library)
+  "Create results and log buffer and if needed create user library"
+  (make-local-variable 'sasbis-buffer-user-library)
+  (setq sasbis-buffer-user-library (if sasbis-user-library
+                                       (if (not (string= sasbis-user-library "none"))
+                                           (if (file-directory-p sasbis-user-library)
+                                               sasbis-user-library
+                                             (user-error "directory %s does not exist" sasbis-user-library))
+                                         sasbis-user-library)
+                                     (make-temp-file "saslib" t)))
+  (get-buffer-create (sasbis-shell-command-get-errorbuffer-name dedicated))
+  (get-buffer-create (sasbis-shell-command-get-process-name dedicated)))
+
 ;; (defvar sas-cli-file-path "/usr/local/bin/sas_u8"
 ;;   "Path to the program used by `run-sas'")
 ;; (defvar sas-cli-arguments '("-nodms" "-nonews" "-stdio"
@@ -446,16 +513,18 @@ that they are prioritized when looking for executables."
   "Keymap for `sasbis-mode'.")
 
 (defun sasbis-shell-send-string (string &optional process msg)
-"Send STRING to inferior Sas PROCESS.
+"Send STRING to inferior Sas PROCESS or via shell-command.
 When optional argument MSG is non-nil, forces display of a
 user-friendly message if there's no process running; defaults to
 t when called interactively."
   (interactive
    (list (read-string "Sas command: ") nil t))
+  (if sasbis-realsession
   (let ((process (or process (sasbis-shell-get-process-or-error msg))))
       (comint-send-string process string)
       (when (not (string-match ".*\n[:blank:]*" string))
-        (comint-send-string process "\n"))))
+        (comint-send-string process "\n")))
+  (sasbis-send-string-with-shell-command string sasbis-buffer-user-library)))
 
 (defun sasbis-shell-send-region (start end &optional  msg)
 "Send the region delimited by START and END to inferior Sas process.
@@ -464,6 +533,7 @@ non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
   (interactive
    (list (region-beginning) (region-end) t))
+  (if sasbis-realsession
   (let* ((string (buffer-substring-no-properties start end))
          (process (sasbis-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
@@ -473,7 +543,10 @@ process running; defaults to t when called interactively."
     ;; (with-current-buffer (process-buffer process)
     ;;  (compilation-forget-errors))
     (sasbis-shell-send-string string process)
-    (deactivate-mark)))
+    (deactivate-mark))
+  (let ((string (buffer-substring-no-properties start end)))
+     (message "Sent: %s..." (match-string 1 string))
+      (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
 
 (defun sasbis-shell-send-line (&optional  msg)
 "Send the current line to the inferior ESS process.
@@ -482,6 +555,7 @@ process. When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
  (interactive (list t))
+  (if sasbis-realsession
   (let* ((start (point-at-bol))
          (end (point-at-eol))
          (string (buffer-substring-no-properties start end))
@@ -493,7 +567,12 @@ process running; defaults to t when called interactively."
     ;; (with-current-buffer (process-buffer process)
     ;;  (compilation-forget-errors))
     (sasbis-shell-send-string string process)
-    (deactivate-mark)))
+    (deactivate-mark))
+  (let* ((start (point-at-bol))
+         (end (point-at-eol))
+         (string (buffer-substring-no-properties start end)))
+     (message "Sent: %s..." (match-string 1 string))
+      (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
 
 (defun sasbis-shell-send-buffer (&optional msg)
 "Send the entire buffer to inferior Sas process.
@@ -515,32 +594,40 @@ defaults to t when called interactively."
     (read-file-name "File to send: ")   ; file-name
     nil                                 ; process
     t))                                 ; msg
+  (if sasbis-realsession
   (let* ((process (or process (sasbis-shell-get-process-or-error msg)))
          (file-name (file-local-name (expand-file-name file-name)))
          (string (with-temp-buffer
     (insert-file-contents file-name)
     (buffer-string))))
-    (sasbis-shell-send-string string process t)))
+    (sasbis-shell-send-string string process t))
+  (let* ((file-name (file-local-name (expand-file-name file-name)))
+         (string (with-temp-buffer
+    (insert-file-contents file-name)
+    (buffer-string))))
+    (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
 
 (defun sasbis-shell-send-exit (&optional process)
 "Send \"endsas;\" to the Sas PROCESS."
   (interactive (list nil))
+  (if sasbis-realsession
    (let* ((process (or process (sasbis-shell-get-process-or-error))))
-    (sasbis-shell-send-string "endsas;\n" process)))
+    (sasbis-shell-send-string "endsas;\n" process))))
 
 (defun sasbis-exit ()
 "Send exit to Sas PROCESS, and close buffer."
   (interactive)
+  (if sasbis-realsession
   (let* ((process (sasbis-shell-get-process-or-error))
          (name-buffer-sas (buffer-name (process-buffer process)))
          (name-buffer-saslog (concat "Log-" (substring name-buffer-sas 1 -1))))
     (sasbis-shell-send-exit process)
     ;; sits for a clean exit of Sas process
-    (sleep-for 0 500)
+    (sleep-for 0 sasbis-delay-kill-buffer)
     ;; kill buffer
     (if sasbis-log-separated
         (kill-buffer name-buffer-saslog))
-    (kill-buffer name-buffer-sas)))
+    (kill-buffer name-buffer-sas))))
 
 (defun sasbis-shell-send-dwim ()
 "Send the region if selected if not try to send the block
@@ -629,7 +716,7 @@ character address of the specified TYPE."
           (if (looking-at ";\n")
               (forward-char 2)
             (forward-char 1))
-          (skip-chars-forward sas-white-chars)))
+          (skip-chars-forward sasbis-white-chars)))
     (goto-char (point-min))))
 
 (defun sasbis-end-of-sas-statement ()
@@ -654,7 +741,7 @@ to skip the first displacement to the end of statement."
   (goto-char (point-min)))
 (if (looking-at "[ \t\n]+proc[ \t\n]+\\([A-Za-z]+\\)")
         (setq nameproc (match-string 1)))
-      (skip-chars-forward sas-white-chars)
+      (skip-chars-forward sasbis-white-chars)
     (concat nameproc "")))
 
 (defun sasbis-end-of-sas-proc (&optional plusone redo)
@@ -691,6 +778,59 @@ The optional argument ARG is a number that indicates the
       (if (sasbis-syntax-context 'comment)  (sasbis-next-sas-proc))
         (sasbis-beginning-of-sas-statement 1)
       (forward-char -1))))
+
+(defun sasbis-external-shell-command (session file-progsas file-result file-log)
+  "return string: the sas command to be run.
+   IF SESSION is not 'none' a personnal sas library is used"
+    (if sasbis-sas-windows
+        (if (string= session "none")
+            (format "%s -SYSIN %s -NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON -PRINT %s -LOG %s"
+                    sasbis-shell-interpreter
+                    file-progsas
+                    file-result
+                    file-log)
+          (format "%s -USER %s -SYSIN %s -NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON -PRINT %s -LOG %s"
+                    sasbis-shell-interpreter
+                    sasbis-buffer-user-library
+                    file-progsas
+                    file-result
+                    file-log))
+      (if (string= session "none")
+          (format "%s %s -log %s -print %s %s"
+                    sasbis-shell-interpreter
+                    sasbis-shell-command-interpreter-args
+                    file-log
+                    file-result
+                    file-progsas)
+        (format "%s -user %s %s -log \"%s\" -print \"%s\" %s"
+                    sasbis-shell-interpreter
+                    sasbis-buffer-user-library
+                    sasbis-shell-command-interpreter-args
+                    file-log
+                    file-result
+                    file-progsas))))
+(defun sasbis-send-string-with-shell-command (string session)
+  (let ((file-progsas (make-temp-file "sasbis"))
+        (file-result (sasbis-shell-command-get-process-name 't))
+        (file-log (sasbis-shell-command-get-errorbuffer-name 't)))
+    (with-current-buffer
+        (switch-to-buffer file-result)
+      (set-visited-file-name file-result)
+      (erase-buffer)
+      (save-buffer 0))
+    (with-current-buffer
+        (switch-to-buffer file-log)
+      (set-visited-file-name file-log)
+      (erase-buffer)
+      (save-buffer 0))
+    (with-current-buffer
+        (switch-to-buffer file-progsas)
+      (set-visited-file-name file-progsas)
+      (insert string)
+      (save-buffer 0))
+    (shell-command
+     (sasbis-external-shell-command session file-progsas file-result file-log)
+     nil nil)))
 
 (defcustom ess-sasbis-tab-stop-list
   '(4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100 104 108 112 116 120)
