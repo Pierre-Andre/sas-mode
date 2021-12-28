@@ -86,7 +86,7 @@
   "Name of SAS user library, if none no user library is created, if nil a temp dir is created, else an existing dir is used"
   :group 'sasbis
   :type  'string)
-(defcustom sasbis-realsession nil
+(defcustom sasbis-realsession t
   "If nil a fake session is used, else a comint buffer is created"
   :group 'sasbis
   :type  'string)
@@ -463,7 +463,7 @@ that they are prioritized when looking for executables."
 
 (defun sasbis-make-fakesession  (&optional dedicated sasbis-user-library)
   "Create results and log buffer and if needed create user library"
-  (make-local-variable 'sasbis-file-progsas)
+;  (make-local-variable 'sasbis-file-progsas)
   (make-local-variable 'sasbis-buffer-user-library)
   (setq sasbis-buffer-user-library
         (if sasbis-user-library
@@ -474,11 +474,12 @@ that they are prioritized when looking for executables."
                               sasbis-user-library))
               sasbis-user-library)
           (make-temp-file "saslib" t)))
-  (let ((buffer-progsas (current-buffer)))
-    (setq sasbis-file-progsas (buffer-name (create-file-buffer ".sasbis_temp_progsas.sas")))
+  (let ((buffer-sas (current-buffer)))
+    ;(setq sasbis-file-progsas (buffer-name (create-file-buffer ".sasbis_temp_progsas.sas")))
     (get-buffer-create (sasbis-shell-command-get-errorbuffer-name dedicated))
     (get-buffer-create (sasbis-shell-command-get-process-name dedicated))
-    (switch-to-buffer buffer-progsas)))
+    (if (not (string= (buffer-name) (buffer-name buffer-sas)))
+        (switch-to-buffer buffer-sas))))
 
 ;; (defvar sas-cli-file-path "/usr/local/bin/sas_u8"
 ;;   "Path to the program used by `run-sas'")
@@ -833,11 +834,11 @@ The optional argument ARG is a number that indicates the
                     file-result
                     file-progsas))))
 (defun sasbis-send-string-with-shell-command (string session)
-  (let ((buffer-sas (current-buffer))
-        (file-progsas sasbis-file-progsas)
+  (let* ((name-buffer-sas (buffer-name (current-buffer)))
+        (file-progsas (make-temp-file "SAS"))
+        (buffer-progsas  (find-file-noselect file-progsas))
         (file-result (sasbis-shell-command-get-process-name 't))
         (file-log (sasbis-shell-command-get-errorbuffer-name 't)))
-    (message "file-progsas %s" file-progsas)
     (with-current-buffer file-result
       (set-visited-file-name file-result)
       (erase-buffer)
@@ -846,7 +847,7 @@ The optional argument ARG is a number that indicates the
       (set-visited-file-name file-log)
       (erase-buffer)
       (save-buffer 0))
-    (with-current-buffer file-progsas
+    (with-current-buffer buffer-progsas
       (set-visited-file-name file-progsas)
       (erase-buffer)
       (insert string)
@@ -854,7 +855,10 @@ The optional argument ARG is a number that indicates the
     (shell-command
      (sasbis-external-shell-command session file-progsas file-result file-log)
      nil nil)
-  (switch-to-buffer buffer-sas)))
+    (if (buffer-live-p buffer-progsas) (kill-buffer buffer-progsas))
+    (if (file-exists-p file-progsas) (delete-file file-progsas))
+    (if (not (string= (buffer-name) name-buffer-sas))
+        (switch-to-buffer name-buffer-sas))))
 
 (defcustom ess-sasbis-tab-stop-list
   '(4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100 104 108 112 116 120)
