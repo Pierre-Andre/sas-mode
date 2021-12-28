@@ -59,10 +59,18 @@ ce module regroupe
   :type 'string
   :group 'sasbis)
 (defcustom sasbis-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
-  "Default arguments for the Sas interpreter."
+  "Default arguments for the Sas interpreter to make a real session using comint (-stdio is the important part)."
   :type 'string
   :group 'sasbis)
 (defcustom sasbis-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
+  "Default arguments for the Sas interpreter."
+  :type 'string
+  :group 'sasbis)
+;; (defcustom sasbis-shell-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON"
+;;   "Default arguments for the Sas interpreter to make a real session using comint windows version (not tested)."
+;;   :type 'string
+;;   :group 'sasbis)
+(defcustom sasbis-shell-command-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON "
   "Default arguments for the Sas interpreter."
   :type 'string
   :group 'sasbis)
@@ -594,16 +602,22 @@ will create these two buffers and if needed a temp directory where the SAS datas
 #+begin_src emacs-lisp :tangle sasbis.el
 (defun sasbis-make-fakesession  (&optional dedicated sasbis-user-library)
   "Create results and log buffer and if needed create user library"
+  (make-local-variable 'sasbis-file-progsas)
   (make-local-variable 'sasbis-buffer-user-library)
-  (setq sasbis-buffer-user-library (if sasbis-user-library
-                                       (if (not (string= sasbis-user-library "none"))
-                                           (if (file-directory-p sasbis-user-library)
-                                               sasbis-user-library
-                                             (user-error "directory %s does not exist" sasbis-user-library))
-                                         sasbis-user-library)
-                                     (make-temp-file "saslib" t)))
-  (get-buffer-create (sasbis-shell-command-get-errorbuffer-name dedicated))
-  (get-buffer-create (sasbis-shell-command-get-process-name dedicated)))
+  (setq sasbis-buffer-user-library
+        (if sasbis-user-library
+            (if (not (string= sasbis-user-library "none"))
+                (if (file-directory-p sasbis-user-library)
+                    sasbis-user-library
+                  (user-error "directory %s does not exist"
+                              sasbis-user-library))
+              sasbis-user-library)
+          (make-temp-file "saslib" t)))
+  (let ((buffer-progsas (current-buffer)))
+    (setq sasbis-file-progsas (buffer-name (create-file-buffer ".sasbis_temp_progsas.sas")))
+    (get-buffer-create (sasbis-shell-command-get-errorbuffer-name dedicated))
+    (get-buffer-create (sasbis-shell-command-get-process-name dedicated))
+    (switch-to-buffer buffer-progsas)))
 #+end_src
 **** Sources, doc
 ****** Basique
@@ -889,7 +903,14 @@ defaults to t when called interactively."
     ;; kill buffer
     (if sasbis-log-separated
         (kill-buffer name-buffer-saslog))
-    (kill-buffer name-buffer-sas))))
+    (kill-buffer name-buffer-sas))
+  (progn
+    (kill-buffer sasbis-file-progsas)
+    (kill-buffer (sasbis-shell-command-get-errorbuffer-name 't))
+    (kill-buffer  (sasbis-shell-command-get-process-name 't))
+    (delete-file sasbis-file-progsas)
+    (delete-file (sasbis-shell-command-get-errorbuffer-name 't))
+    (delete-file (sasbis-shell-command-get-process-name 't)))))
 #+end_src
 **** send dwim
 
@@ -1059,15 +1080,17 @@ The optional argument ARG is a number that indicates the
    IF SESSION is not 'none' a personnal sas library is used"
     (if sasbis-sas-windows
         (if (string= session "none")
-            (format "%s -SYSIN %s -NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON -PRINT %s -LOG %s"
+            (format "%s -SYSIN %s %s -PRINT %s -LOG %s"
                     sasbis-shell-interpreter
                     file-progsas
+                    sasbis-shell-command-interpreter-args-windows
                     file-result
                     file-log)
-          (format "%s -USER %s -SYSIN %s -NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON -PRINT %s -LOG %s"
+          (format "%s -USER %s -SYSIN %s %s -PRINT %s -LOG %s"
                     sasbis-shell-interpreter
                     sasbis-buffer-user-library
                     file-progsas
+                    sasbis-shell-command-interpreter-args-windows
                     file-result
                     file-log))
       (if (string= session "none")
@@ -1085,27 +1108,28 @@ The optional argument ARG is a number that indicates the
                     file-result
                     file-progsas))))
 (defun sasbis-send-string-with-shell-command (string session)
-  (let ((file-progsas (make-temp-file "sasbis"))
+  (let ((buffer-sas (current-buffer))
+        (file-progsas sasbis-file-progsas)
         (file-result (sasbis-shell-command-get-process-name 't))
         (file-log (sasbis-shell-command-get-errorbuffer-name 't)))
-    (with-current-buffer
-        (switch-to-buffer file-result)
+    (message "file-progsas %s" file-progsas)
+    (with-current-buffer file-result
       (set-visited-file-name file-result)
       (erase-buffer)
       (save-buffer 0))
-    (with-current-buffer
-        (switch-to-buffer file-log)
+    (with-current-buffer file-log
       (set-visited-file-name file-log)
       (erase-buffer)
       (save-buffer 0))
-    (with-current-buffer
-        (switch-to-buffer file-progsas)
+    (with-current-buffer file-progsas
       (set-visited-file-name file-progsas)
+      (erase-buffer)
       (insert string)
       (save-buffer 0))
     (shell-command
      (sasbis-external-shell-command session file-progsas file-result file-log)
-     nil nil)))
+     nil nil)
+  (switch-to-buffer buffer-sas)))
 #+end_src
 *** variables
 #+begin_src emacs-lisp :tangle sasbis.el
@@ -1606,129 +1630,3 @@ sasbis-mode-font-lock-functions10))
 ;;; sasbis.el ends here
 #+end_src
 
-* tests
-***** test de =make-process=
-OK
-#+begin_src emacs-lisp
-(defun run-sas-direct ()
-  "Run an inferior instance of `sas' inside Emacs."
-  (interactive)
-  (let* ((sas-program sas-cli-file-path))
-    ;; pop to the "*sas*" buffer if the process is dead, the
-    ;; buffer is missing or it's got the wrong mode.
-    (make-process (list :name "sas" :buffer (generate-new-buffer "*sas*")
-                        :command (list "/usr/local/bin/sas_u8" "-nodms" "-nonews" "-stdio"
-                                       "-nofullstimer" "-nodate" "-nocenter"
-                                       "-terminal" "-pagesize" "max"
-                                       "-nosyntaxcheck")
-                        :stderr (generate-new-buffer "*sas-errors*")))
-    ))
-#+end_src
-#+begin_src emacs-lisp
-(apply #'make-process (list :name "sas" :buffer (generate-new-buffer "*sas*")
-                        :command (list "/usr/local/bin/sas_u8" "-nodms" "-nonews" "-stdio"
-                            "-nofullstimer" "-nodate" "-nocenter"
-                            "-terminal" "-pagesize" "max"
-                            "-nosyntaxcheck")
-                        :stderr (generate-new-buffer "*sas-errors*")))
-#+end_src
-
-#+RESULTS:
-: #<process sas>
-
-***** ouverture
-#+begin_src emacs-lisp :results none
-(run-sas)
-#+end_src
-#+begin_src emacs-lisp :results output
-(list-processes)
-(process-list)
-(message "proc : %s" (comint-check-proc "*sas*"))
-#+end_src
-
-#+RESULTS:
-
-#+begin_src emacs-lisp :results output
-(run-sas-direct)
-#+end_src
-#+begin_src emacs-lisp
-(make-process :name "sas" :buffer (generate-new-buffer "*sas*")
-                        :command (list "/usr/local/bin/sas_u8" "-nodms" "-nonews" "-stdio"
-                            "-nofullstimer" "-nodate" "-nocenter"
-                            "-terminal" "-pagesize" "max"
-                            "-nosyntaxcheck")
-                        :stderr (generate-new-buffer "*sas-errors*"))
-#+end_src
-
-#+RESULTS:
-: #<process sas>
-
-***** envoi string: fermeture
-#+begin_src emacs-lisp :results output
-(comint-send-string "*sas*" "endsas;\n")
-#+end_src
-
-#+RESULTS:
-
-#+begin_src emacs-lisp :results output
-(process-send-string "sas" "endsas;\n")
-#+end_src
-
-#+RESULTS:
-
-***** envoi d'une proc
-#+begin_src emacs-lisp :results output
-;(comint-send-string "*sas*" "proc setinit;\n run;\n")
-(comint-send-string "*sas*" "data a; v=1; run; proc print data=a; run;\n")
-#+end_src
-
-#+RESULTS:
-
-#+begin_src emacs-lisp :results output
-;(process-send-string (get-process "*sas*")  "proc setinit;\n run;\n")
-(process-send-string "sas"  "data a; v=1; run; proc print data=a; run;\n")
-(while (accept-process-output (get-process "*sas*") ))
-(while (accept-process-output (get-process "*sas errors*")))
-#+end_src
-
-#+RESULTS:
-
-***** test buffer vivant
-#+begin_src emacs-lisp
-(require 'ob-comint)
-(message "yes %s" (org-babel-comint-buffer-livep "*sas*"))
-#+end_src
-
-#+RESULTS:
-: yes nil
-
-***** test vivant
-#+begin_src emacs-lisp
-(require 'ob-comint)
-(message "yes %s" (get-buffer-process  (get-buffer "*sas*")))
-#+end_src
-
-#+RESULTS:
-: yes t
-
-***** test envoi via ob-comint
-#+begin_src emacs-lisp
-(require 'ob-comint)
-;; (org-babel-comint-in-buffer (get-buffer "*sas*") "proc setinit;\n run;\n")
-(with-current-buffer
- (switch-to-buffer "*sas*" )
- (org-babel-comint-input-command "*sas*" "proc setinit;\n run;\n"))
-#+end_src
-
-#+RESULTS:
-: proc setinit;
-:  run;
-***** test envoi via ob-commint
-#+begin_src emacs-lisp
-(let* ((org-babel-sas-eoe-indicator
-        "data eoe_org_data;\n nbabelvareoe=1;\nrun;\nproc print data=eoe_org_data;\nrun;\n")
-       (full-body (concat "proc setinit; run;\n" org-babel-sas-eoe-indicator)))
-  (with-current-buffer
-      (switch-to-buffer "*sas*")
-    (org-babel-comint-input-command "*sas*" full-body)))
-#+end_src
