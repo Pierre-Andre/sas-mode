@@ -1,12 +1,4 @@
-#+TITLE: Sasbis
-#+STARTUP: show2levels
-* sasbis.el
-ce module regroupe
-1. un sas-mode qui permet d'editer du SAS avec coloration syntaxique
-2. un sas-inferior-mode hérité de comint-mode afin de gérer le processus SAS
-** debut sasbis.el
-#+begin_src emacs-lisp :tangle sasbis.el
-;;; sasbis.el --- Description -*- lexical-binding: t; -*-
+;;; sas.el --- Description -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 1997-2021 Free Software Foundation, Inc.
 ;;
@@ -47,165 +39,62 @@ ce module regroupe
 (require 'comint)
 (require 'tramp-sh)
 
-#+end_src
-** variables
-#+begin_src emacs-lisp :tangle sasbis.el
-(defcustom sasbis-shell-interpreter "sas"
+(defcustom sas-shell-interpreter "sas"
   "Default Sas interpreter for shell."
   :type 'string
-  :group 'sasbis)
-(defcustom sasbis-log-separated 't
+  :group 'sas)
+(defcustom sas-log-separated 't
   "If nil SAS buffer will contains LOG and Output."
   :type 'string
-  :group 'sasbis)
-(defcustom sasbis-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
+  :group 'sas)
+(defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
   "Default arguments for the Sas interpreter to make a real session using comint (-stdio is the important part)."
   :type 'string
-  :group 'sasbis)
-(defcustom sasbis-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
+  :group 'sas)
+(defcustom sas-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
   "Default arguments for the Sas interpreter."
   :type 'string
-  :group 'sasbis)
-;; (defcustom sasbis-shell-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON"
+  :group 'sas)
+;; (defcustom sas-shell-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON"
 ;;   "Default arguments for the Sas interpreter to make a real session using comint windows version (not tested)."
 ;;   :type 'string
-;;   :group 'sasbis)
-(defcustom sasbis-shell-command-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON "
+;;   :group 'sas)
+(defcustom sas-shell-command-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON "
   "Default arguments for the Sas interpreter."
   :type 'string
-  :group 'sasbis)
-#+end_src
-#+begin_src emacs-lisp :tangle sasbis.el
-(defcustom sasbis-shell-buffer-name "Sas"
+  :group 'sas)
+
+(defcustom sas-shell-buffer-name "Sas"
   "Default buffer name for Sas interpreter."
   :type 'string
-  :group 'sasbis
+  :group 'sas
   :safe 'stringp)
-#+end_src
-#+begin_src emacs-lisp :tangle sasbis.el
+
 ;; The next two are ``the inside of [...] in a regexp'' to be used in
 ;; (skip-chars-(for|back)ward SAS-..-chars)
-(defcustom sasbis-white-chars " \t\n\f"
+(defcustom sas-white-chars " \t\n\f"
   "This does NOT escape blanks (RMH, 2000/03/20)."
-  :group 'sasbis
+  :group 'sas
   :type  'string)
 
-(defcustom sasbis-delay-kill-buffer 800
+(defcustom sas-delay-kill-buffer 800
   "Delay in millisecs between endsas; and killing windows"
-  :group 'sasbis
+  :group 'sas
   :type  'integer)
 
-(defcustom sasbis-user-library nil
+(defcustom sas-user-library nil
   "Name of SAS user library, if none no user library is created, if nil a temp dir is created, else an existing dir is used"
-  :group 'sasbis
+  :group 'sas
   :type  'string)
-(defcustom sasbis-realsession t
+(defcustom sas-realsession t
   "If nil a fake session is used, else a comint buffer is created"
-  :group 'sasbis
+  :group 'sas
   :type  'string)
-(defcustom sasbis-sas-windows nil
+(defcustom sas-sas-windows nil
   "If nil in a fake session windows shell syntax is used to execute sas program, else unix/linux syntax is used"
-  :group 'sasbis
+  :group 'sas
   :type  'string)
 
-
-#+end_src
-** inferior-sasbis-mode
-*** Idea
-The main idea of sasbis.el is to provide
-1. a way to send SAS program from emacs buffer to SAS program
-2. a way to get the results
-3. a way to have a syntaxic coloration in the buffer.
-
-Buffer Emacs -----> SAS : results (and log/errors)
-**** Inferior mode
-
-1. The classical way to interact is to setup an "inferior" SAS process with an
-   associated buffer using comint. In that inferior buffer, the user types its
-   command, send them (usually using RET) and get the results and/or the errors.
-
-   As comint don't provide a way to separate results (SAS output) from standard
-   error (ie SAS log) the classical output have them both in the associated
-   SAS buffer (and it is a little bit messy) . This SAS buffer is in
-   =inferior-sasbis-mode= which inherits from =comint-mode=
-
-
-                       SAS process
-   Buffer Emacs ----->     +
-                       SAS buffer
-                   (inferior-sasbis-mode)
-
-2. Another way is to separate the associated buffer in two part: the std output
-   (SAS results) and the std error (SAS log) each in separate buffers
-
-                                       SAS process
-    Buffer Emacs ----->                     +
-                        SAS buffer (output) & SAS buffer std error (log)
-                        (inferior-sasbis-mode)
-
-   To achieve this, the whole function composition is provided with an
-   supplementary argument to have this std error redirected in another buffer
-
-    make-comint-in-buffer-std ->  comint-exec-std -> comint-exec-1-std -> start-file-process-std -> start-process-std -> make-process (provided by emacs)
-
-Starting the inferior mode buffer is done with =run-sasbis=. This function is the
-same as =run-python=
-**** SASBIS mode
-It is the major mode providing
-- syntaxic coloration
-  (inherits from ESS code)
-- functions to send code to SAS
-  and a thus a way to identify SAS buffer
-- keyboard shortcuts
-***** Sending code to SAS
-The idea is to set some functions to send line/region/buffer and a "do what I mean"
-(dwim) function. The latter will send a block around the point (the cursor): the block
-is either the proc or the data block where the cursor is (exception in proc IML where
-it is the line). The flow is the following:
-
-sasbis-send-line
-sasbis-send-region    --- > sasbis-send-string ---> comint-send-string ---> results in SAS buffer
-sasbis-send-buffer                                                        associated with SAS
-sasbis-send-dwim
-
-These function send a string to the inferior SAS buffer and to the SAS program
-***** Identifying the sas buffer
-I follow the python-mode scheme: the buffer is either a global buffer (One SAS inferior buffer for all) or a dedicated
-SAS inferior buffer for the given buffer
-
-_Dedicated_
-SAS buffer "program1.sas"              SAS process
-where is the program 1          ---->      +
-(sasbis-mode)                             SAS buffer dedicated for program 1
-
-SAS buffer "program2.sas"              SAS process
-where is the program 2          ---->      +
-(sasbis-mode)                             SAS buffer dedicated for program 2
-
-_Global_
-SAS buffer "program1.sas"
-where is the program 1     \
-(sasbis-mode)               \
-                             \
-SAS buffer "program2.sas"     \         SAS process
-where is the program 2      ---\---->      +
-(sasbis-mode)                             the global SAS buffer
-
-Moreover the dedicated buffer have a name chosen as =*sas output[program1]*=
-(and =*sas log[program1]*=).
-
-*** output+error in the same buffer
-It is possible to clean up the comint buffer and to have only results
-https://documentation.sas.com/doc/da/pgmsascdc/9.4_3.5/basess/p0rgzxi5r1euj0n14epck6v9l2hm.htm
-=options nosource nonotes errors=0;=
-
-with that, it is possible to make sas via tramp with a single comint buffer
-*** functions to start process with std error
-the composition chain to start a comint buffer with output/errors separated.
-These functions are the same as in comint but the stderr argument.
-
-make-comint-in-buffer-std ->  comint-exec-std -> comint-exec-1-std -> start-file-process-std -> start-process-std -> make-process
-#+begin_src emacs-lisp :results none :tangle sasbis.el
 (defun make-comint-in-buffer-std (name buffer program &optional startcommand stderr &rest switches)
 "Make a Comint process NAME in BUFFER, running PROGRAM.
 If BUFFER is nil, it defaults to NAME surrounded by `*'s.
@@ -363,17 +252,11 @@ use `start-file-process'."
                                :stderr stderr)
                        (list :command (cons program program-args)))
                    )))  )
-#+end_src
-*** start a buffer *SAS* with inferior-mode
-**** Run-sasbis
-the main function to start a buffer *SAS*
 
-run-sasbis -> sasbis-shell-make-comint
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun run-sasbis (&optional cmd dedicated show)
+(defun run-sas (&optional cmd dedicated show)
 "Run an inferior Sas process.
 
-Argument CMD defaults to `sasbis-shell-calculate-command' return
+Argument CMD defaults to `sas-shell-calculate-command' return
 value.  When called interactively with `prefix-arg', it allows
 the user to edit such value and choose whether the interpreter
 should be DEDICATED for the current buffer.  When numeric prefix
@@ -384,44 +267,39 @@ already running for it, it will do nothing.  This means that if
 the current buffer is using a global process, the user is still
 able to switch it to use a dedicated one.
 
-Runs the hook `inferior-sasbis-mode-hook' after
+Runs the hook `inferior-sas-mode-hook' after
 `comint-mode-hook' is run.  (Type \\[describe-mode] in the
 process buffer for a list of commands.)"
   (interactive
    (if current-prefix-arg
        (list
-        (read-shell-command "Run Sas: " (sasbis-shell-calculate-command))
+        (read-shell-command "Run Sas: " (sas-shell-calculate-command))
         (y-or-n-p "Make dedicated process? ")
         (= (prefix-numeric-value current-prefix-arg) 4))
-     (list (sasbis-shell-calculate-command) nil t)))
-  (if sasbis-realsession
+     (list (sas-shell-calculate-command) nil t)))
+  (if sas-realsession
   (let ((buffer
-         (sasbis-shell-make-comint
-          (or cmd (sasbis-shell-calculate-command))
-          (sasbis-shell-get-process-name dedicated) dedicated show)))
+         (sas-shell-make-comint
+          (or cmd (sas-shell-calculate-command))
+          (sas-shell-get-process-name dedicated) dedicated show)))
     (pop-to-buffer buffer)
     (get-buffer-process buffer))
-  (sasbis-make-fakesession 't sasbis-user-library)))
-#+end_src
-**** String containing the Command to be executed
-with options
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-calculate-command ()
+  (sas-make-fakesession 't sas-user-library)))
+
+(defun sas-shell-calculate-command ()
 "Calculate the string used to execute the inferior Sas process."
   (format "%s %s"
-          ;; `sasbis-shell-make-comint' expects to be able to
+          ;; `sas-shell-make-comint' expects to be able to
           ;; `split-string-and-unquote' the result of this function.
-          (combine-and-quote-strings (list sasbis-shell-interpreter))
-          sasbis-shell-interpreter-args))
-#+end_src
-**** macros
-#+begin_src emacs-lisp :tangle sasbis.el
-(defmacro sasbis-shell-with-environment (&rest body)
+          (combine-and-quote-strings (list sas-shell-interpreter))
+          sas-shell-interpreter-args))
+
+(defmacro sas-shell-with-environment (&rest body)
 "Modify shell environment during execution of BODY.
 Temporarily sets `process-environment' and `exec-path' during
 execution of body.  If `default-directory' points to a remote
 machine then modifies `tramp-remote-process-environment' and
-`sasbis-shell-remote-exec-path' instead."
+`sas-shell-remote-exec-path' instead."
   (declare (indent 0) (debug (body)))
   (let ((vec (make-symbol "vec")))
     `(progn
@@ -432,14 +310,14 @@ machine then modifies `tramp-remote-process-environment' and
               (process-environment
                (if ,vec
                    process-environment
-                 (sasbis-shell-calculate-process-environment)))
+                 (sas-shell-calculate-process-environment)))
               (exec-path
                (if ,vec
                    exec-path
-                 (sasbis-shell-calculate-exec-path)))
+                 (sas-shell-calculate-exec-path)))
               (tramp-remote-process-environment
                (if ,vec
-                   (sasbis-shell-calculate-process-environment)
+                   (sas-shell-calculate-process-environment)
                  tramp-remote-process-environment)))
          (when (tramp-get-connection-process ,vec)
            ;; For already existing connections, the new exec path must
@@ -447,68 +325,62 @@ machine then modifies `tramp-remote-process-environment' and
            ;; of such case is when remote dir-locals are read and
            ;; *then* subprocesses are triggered within the same
            ;; connection.
-           (sasbis-shell-tramp-refresh-remote-path
-            ,vec (sasbis-shell-calculate-exec-path))
+           (sas-shell-tramp-refresh-remote-path
+            ,vec (sas-shell-calculate-exec-path))
            ;; The `tramp-remote-process-environment' variable is only
            ;; effective when the started process is an interactive
            ;; shell, otherwise (like in the case of processes started
            ;; with `process-file') the environment is not changed.
            ;; This makes environment modifications effective
            ;; unconditionally.
-           (sasbis-shell-tramp-refresh-process-environment
+           (sas-shell-tramp-refresh-process-environment
             ,vec tramp-remote-process-environment))
          ,(macroexp-progn body)))))
-(defmacro sasbis-shell--add-to-path-with-priority (pathvar paths)
+(defmacro sas-shell--add-to-path-with-priority (pathvar paths)
 "Modify PATHVAR and ensure PATHS are added only once at beginning."
   `(dolist (path (reverse ,paths))
      (cl-delete path ,pathvar :test #'string=)
      (cl-pushnew path ,pathvar :test #'string=)))
-#+end_src
-**** Buffer name
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-get-process-name (dedicated)
+
+(defun sas-shell-get-process-name (dedicated)
 "Calculate the appropriate process name for inferior Sas process.
 If DEDICATED is t returns a string with the form
-`sasbis-shell-buffer-name'[`buffer-name'] else returns the value
-of `sasbis-shell-buffer-name'."
+`sas-shell-buffer-name'[`buffer-name'] else returns the value
+of `sas-shell-buffer-name'."
   (if dedicated
-      (format "%s[%s]" sasbis-shell-buffer-name (buffer-name))
-    sasbis-shell-buffer-name))
-(defun sasbis-shell-get-errorbuffer-name (dedicated)
+      (format "%s[%s]" sas-shell-buffer-name (buffer-name))
+    sas-shell-buffer-name))
+(defun sas-shell-get-errorbuffer-name (dedicated)
 "Calculate the appropriate  name for error bufffer .
 If DEDICATED is t returns a string with the form
-Log`sasbis-shell-buffer-name'[`buffer-name'] else returns the value
-of `sasbis-shell-buffer-name'."
+Log`sas-shell-buffer-name'[`buffer-name'] else returns the value
+of `sas-shell-buffer-name'."
   (if dedicated
-      (format "Log-%s[%s]" sasbis-shell-buffer-name (buffer-name))
-   (format "Log-%s"  sasbis-shell-buffer-name)))
-#+end_src
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-command-get-process-name (dedicated)
+      (format "Log-%s[%s]" sas-shell-buffer-name (buffer-name))
+   (format "Log-%s"  sas-shell-buffer-name)))
+
+(defun sas-shell-command-get-process-name (dedicated)
 "Calculate the appropriate process name for inferior Sas process.
 If DEDICATED is t returns a string with the form
-`sasbis-shell-buffer-name_buffer-name' else returns the value
-of `sasbis-shell-buffer-name'."
+`sas-shell-buffer-name_buffer-name' else returns the value
+of `sas-shell-buffer-name'."
   (if dedicated
-      (format "%s_%s" sasbis-shell-buffer-name (buffer-name))
-    sasbis-shell-buffer-name))
-(defun sasbis-shell-command-get-errorbuffer-name (dedicated)
+      (format "%s_%s" sas-shell-buffer-name (buffer-name))
+    sas-shell-buffer-name))
+(defun sas-shell-command-get-errorbuffer-name (dedicated)
 "Calculate the appropriate  name for error bufffer .
 If DEDICATED is t returns a string with the form
-Log`sasbis-shell-buffer-name_buffer-name' else returns the value
-of `sasbis-shell-buffer-name'."
+Log`sas-shell-buffer-name_buffer-name' else returns the value
+of `sas-shell-buffer-name'."
   (if dedicated
-      (format "Log-%s_%s" sasbis-shell-buffer-name (buffer-name))
-   (format "Log-%s"  sasbis-shell-buffer-name)))
-#+end_src
-**** making the comint buffer : sasbis-shell-make-comint
-sasbis-shell-make-comint -> make-comint-in-buffer-std
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-make-comint (cmd proc-name &optional dedicated  show internal)
+      (format "Log-%s_%s" sas-shell-buffer-name (buffer-name))
+   (format "Log-%s"  sas-shell-buffer-name)))
+
+(defun sas-shell-make-comint (cmd proc-name &optional dedicated  show internal)
 "Create a Sas shell comint buffer.
 CMD is the Sas command to be executed and PROC-NAME is the
 process name the comint buffer will get.  After the comint buffer
-is created the `inferior-sasbis-mode' is activated. When
+is created the `inferior-sas-mode' is activated. When
 optional argument DEDICATED is non-nil it controls if the
  stderr buffer is dedicated. When
 optional argument SHOW is non-nil the buffer is shown.  When
@@ -518,38 +390,36 @@ convention for temporary/internal buffers, and also makes sure
 the user is not queried for confirmation when the process is
 killed."
   (save-excursion
-    (sasbis-shell-with-environment
+    (sas-shell-with-environment
      (let* ((proc-buffer-name
              (format (if (not internal) "*%s*" " *%s*") proc-name)))
        (when (not (comint-check-proc proc-buffer-name))
          (let* ((cmdlist (split-string-and-unquote cmd))
                 (interpreter (car cmdlist))
                 (args (cdr cmdlist))
-                (bufstderr (if sasbis-log-separated
-                             (get-buffer-create (sasbis-shell-get-errorbuffer-name dedicated))))
+                (bufstderr (if sas-log-separated
+                             (get-buffer-create (sas-shell-get-errorbuffer-name dedicated))))
                 (buffer (apply #'make-comint-in-buffer-std proc-name proc-buffer-name
                                interpreter nil bufstderr args))
-                (sasbis-shell--parent-buffer (current-buffer))
+                (sas-shell--parent-buffer (current-buffer))
                 (process (get-buffer-process buffer))
                 ;; Users can override the interpreter and args
-                ;; interactively when calling `run-sasbis', let-binding
+                ;; interactively when calling `run-sas', let-binding
                 ;; these allows having the new right values in all
-                ;; setup code that is done in `inferior-sasbis-mode',
+                ;; setup code that is done in `inferior-sas-mode',
                 ;; which is important, especially for prompt detection.
-                (sasbis-shell--interpreter interpreter)
-                (sasbis-shell--interpreter-args
+                (sas-shell--interpreter interpreter)
+                (sas-shell--interpreter-args
                  (mapconcat #'identity args " ")))
-           (if sasbis-log-separated (with-current-buffer bufstderr
-             (inferior-sasbis-mode)))
+           (if sas-log-separated (with-current-buffer bufstderr
+             (inferior-sas-mode)))
            (with-current-buffer buffer
-             (inferior-sasbis-mode))
+             (inferior-sas-mode))
             (when show (display-buffer buffer))
            (and internal (set-process-query-on-exit-flag process nil))))
        proc-buffer-name))))
-#+end_src
-**** env et exec path
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-calculate-process-environment ()
+
+(defun sas-shell-calculate-process-environment ()
 "Calculate `process-environment' or `tramp-remote-process-environment'.
   If `default-directory' points to a remote host, the returned value is intended for `tramp-remote-process-environment'."
   (let* ((remote-p (file-remote-p default-directory))
@@ -557,171 +427,60 @@ killed."
                                   tramp-remote-process-environment
                                 process-environment)))
     process-environment))
-#+end_src
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-calculate-exec-path ()
+
+(defun sas-shell-calculate-exec-path ()
 "Calculate `exec-path'.
-Prepends `sasbis-shell-exec-path'.  If `default-directory' points
+Prepends `sas-shell-exec-path'.  If `default-directory' points
 to a remote host, the returned value appends
-`sasbis-shell-remote-exec-path' instead of `exec-path'."
+`sas-shell-remote-exec-path' instead of `exec-path'."
   (let ((new-path (copy-sequence
                    (if (file-remote-p default-directory)
-                       sasbis-shell-remote-exec-path
+                       sas-shell-remote-exec-path
                      exec-path))))
-    (sasbis-shell--add-to-path-with-priority
-     new-path sasbis-shell-exec-path)
+    (sas-shell--add-to-path-with-priority
+     new-path sas-shell-exec-path)
     new-path))
-#+end_src
-#+begin_src emacs-lisp  :tangle sasbis.el
-(defcustom sasbis-shell-remote-exec-path nil
+
+(defcustom sas-shell-remote-exec-path nil
 "List of paths to be ensured remotely for searching executables.
 When this variable is non-nil, values are exported into remote
 hosts PATH before starting processes.  Values defined in
-`sasbis-shell-exec-path' will take precedence to paths defined
+`sas-shell-exec-path' will take precedence to paths defined
 here.  Normally you wont use this variable directly unless you
 plan to ensure a particular set of paths to all Sas shell
 executed through tramp connections."
   :version "25.1"
   :type '(repeat string)
-  :group 'sasbis)
-(defcustom sasbis-shell-exec-path nil
+  :group 'sas)
+(defcustom sas-shell-exec-path nil
 "List of paths for searching executables.
 When this variable is non-nil, values added at the beginning of
 the PATH before starting processes.  Any values present here that
 already exists in PATH are moved to the beginning of the list so
 that they are prioritized when looking for executables."
   :type '(repeat string)
-  :group 'sasbis)
+  :group 'sas)
 
-#+end_src
-sasbis-shell--interpreter sasbis-shell--interpreter-args
-**** Fake session
-if sasbis-realsession is nil all string will be sent to SAS using
-shell-command and the results+log will be collected in 2 buffers. The following function
-will create these two buffers and if needed a temp directory where the SAS dataset will be saved
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-make-fakesession  (&optional dedicated sasbis-user-library)
+(defun sas-make-fakesession  (&optional dedicated sas-user-library)
   "Create results and log buffer and if needed create user library"
-;  (make-local-variable 'sasbis-file-progsas)
-  (make-local-variable 'sasbis-buffer-user-library)
-  (setq sasbis-buffer-user-library
-        (if sasbis-user-library
-            (if (not (string= sasbis-user-library "none"))
-                (if (file-directory-p sasbis-user-library)
-                    sasbis-user-library
+;  (make-local-variable 'sas-file-progsas)
+  (make-local-variable 'sas-buffer-user-library)
+  (setq sas-buffer-user-library
+        (if sas-user-library
+            (if (not (string= sas-user-library "none"))
+                (if (file-directory-p sas-user-library)
+                    sas-user-library
                   (user-error "directory %s does not exist"
-                              sasbis-user-library))
-              sasbis-user-library)
+                              sas-user-library))
+              sas-user-library)
           (make-temp-file "saslib" t)))
   (let ((buffer-sas (current-buffer)))
-    ;(setq sasbis-file-progsas (buffer-name (create-file-buffer ".sasbis_temp_progsas.sas")))
-    (get-buffer-create (sasbis-shell-command-get-errorbuffer-name dedicated))
-    (get-buffer-create (sasbis-shell-command-get-process-name dedicated))
+    ;(setq sas-file-progsas (buffer-name (create-file-buffer ".sas_temp_progsas.sas")))
+    (get-buffer-create (sas-shell-command-get-errorbuffer-name dedicated))
+    (get-buffer-create (sas-shell-command-get-process-name dedicated))
     (if (not (string= (buffer-name) (buffer-name buffer-sas)))
         (switch-to-buffer buffer-sas))))
-#+end_src
-**** Sources, doc
-****** Basique
-qqch de tres basique:
-#+begin_src emacs-lisp :results none
-(defun run-sasbis ()
-  "Run an inferior instance of `sas' inside Emacs."
-  (interactive)
-  (let* ((sasbis-program sasbis-cli-file-path)
-         (buffer (comint-check-proc "*sas*")))
-    ;; pop to the "*sas*" buffer if the process is dead, the
-    ;; buffer is missing or it's got the wrong mode.
-    (pop-to-buffer-same-window
-     (if (or buffer (not (derived-mode-p 'inferior-sasbis-mode))
-             (comint-check-proc (current-buffer)))
-         (get-buffer-create (or buffer "*sas*"))
-       (current-buffer)))
-    ;; create the comint process if there is no buffer.
-    (unless buffer
-      (apply 'make-comint-in-buffer-std "sas"
-             buffer sasbis-program (generate-new-buffer "*sas errors*") sasbis-cli-arguments )
-      (inferior-sasbis-mode))))
-(run-sasbis)
-#+end_src
-***** Python
-ou mieux =run-python= et =python-shell-make-comint=
-run-python -> python-shell-make-comint -> make-comint-in-buffer -> comint-exec -> comint-exec-1 -> start-file-process -> start-process -> make-process
-#+begin_src emacs-lisp
-(defun run-python (&optional cmd dedicated show)
-  "Run an inferior Python process.
 
-Argument CMD defaults to `python-shell-calculate-command' return
-value.  When called interactively with `prefix-arg', it allows
-the user to edit such value and choose whether the interpreter
-should be DEDICATED for the current buffer.  When numeric prefix
-arg is other than 0 or 4 do not SHOW.
-
-For a given buffer and same values of DEDICATED, if a process is
-already running for it, it will do nothing.  This means that if
-the current buffer is using a global process, the user is still
-able to switch it to use a dedicated one.
-
-Runs the hook `inferior-python-mode-hook' after
-`comint-mode-hook' is run.  (Type \\[describe-mode] in the
-process buffer for a list of commands.)"
-  (interactive
-   (if current-prefix-arg
-       (list
-        (read-shell-command "Run Python: " (python-shell-calculate-command))
-        (y-or-n-p "Make dedicated process? ")
-        (= (prefix-numeric-value current-prefix-arg) 4))
-     (list (python-shell-calculate-command) nil t)))
-  (let ((buffer
-         (python-shell-make-comint
-          (or cmd (python-shell-calculate-command))
-          (python-shell-get-process-name dedicated) show)))
-    (pop-to-buffer buffer)
-    (get-buffer-process buffer)))
-#+end_src
-et
-#+begin_src emacs-lisp
-(defun python-shell-make-comint (cmd proc-name &optional show internal)
-  "Create a Python shell comint buffer.
-CMD is the Python command to be executed and PROC-NAME is the
-process name the comint buffer will get.  After the comint buffer
-is created the `inferior-python-mode' is activated.  When
-optional argument SHOW is non-nil the buffer is shown.  When
-optional argument INTERNAL is non-nil this process is run on a
-buffer with a name that starts with a space, following the Emacs
-convention for temporary/internal buffers, and also makes sure
-the user is not queried for confirmation when the process is
-killed."
-  (save-excursion
-    (python-shell-with-environment
-      (let* ((proc-buffer-name
-              (format (if (not internal) "*%s*" " *%s*") proc-name)))
-        (when (not (comint-check-proc proc-buffer-name))
-          (let* ((cmdlist (split-string-and-unquote cmd))
-                 (interpreter (car cmdlist))
-                 (args (cdr cmdlist))
-                 (buffer (apply #'make-comint-in-buffer proc-name proc-buffer-name
-                                interpreter nil args))
-                 (python-shell--parent-buffer (current-buffer))
-                 (process (get-buffer-process buffer))
-                 ;; Users can override the interpreter and args
-                 ;; interactively when calling `run-python', let-binding
-                 ;; these allows having the new right values in all
-                 ;; setup code that is done in `inferior-python-mode',
-                 ;; which is important, especially for prompt detection.
-                 (python-shell--interpreter interpreter)
-                 (python-shell--interpreter-args
-                  (mapconcat #'identity args " ")))
-            (with-current-buffer buffer
-              (inferior-python-mode))
-            (when show (display-buffer buffer))
-            (and internal (set-process-query-on-exit-flag process nil))))
-        proc-buffer-name))))
-#+end_src
-***** Ess
-R ->  run-ess-r ->
-inferior-ess -> inferior-ess--start-process -> comint-exec -> comint-exec-1 -> start-file-process -> start-file
-*** inferior-sasbis mode: creation
-#+begin_src emacs-lisp :results none :tangle sasbis.el
 ;; (defvar sas-cli-file-path "/usr/local/bin/sas_u8"
 ;;   "Path to the program used by `run-sas'")
 ;; (defvar sas-cli-arguments '("-nodms" "-nonews" "-stdio"
@@ -730,54 +489,45 @@ inferior-ess -> inferior-ess--start-process -> comint-exec -> comint-exec-1 -> s
 ;;                             "-nosyntaxcheck")
 ;;   "Commandline arguments to pass to `sas-cli'.")
 ;; to print sas options list add "-oplist" to sas-cli-arguments
-(defvar sasbis-prompt-regexp "^"
-"Prompt for `run-sasbis'.")
-(defun sasbis--initialize ()
+(defvar sas-prompt-regexp "^"
+"Prompt for `run-sas'.")
+(defun sas--initialize ()
   "Helper function to initialize Sas"
   (setq comint-process-echoes t)
   (setq comint-use-prompt-regexp t))
 
-(define-derived-mode inferior-sasbis-mode comint-mode "Inferior sas"
- "Major mode for sas inferior process`run-sasbis'."
-  nil "sasbis"
+(define-derived-mode inferior-sas-mode comint-mode "Inferior sas"
+ "Major mode for sas inferior process`run-sas'."
+  nil "sas"
   ;; this sets up the prompt so it matches things like: [foo@bar]
-  (setq comint-prompt-regexp sasbis-prompt-regexp)
+  (setq comint-prompt-regexp sas-prompt-regexp)
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
-        '(sasbis-mode-font-lock-defaults nil t)))
-;;  (set-syntax-table sasbis-mode-syntax-table))
+        '(sas-mode-font-lock-defaults nil t)))
+;;  (set-syntax-table sas-mode-syntax-table))
 ;; this makes it read only; a contentious subject as some prefer the
 ;; buffer to be overwritable.
 ;; (setq comint-prompt-read-only t)
 ;; (setq comint-process-echoes t)
 ;; this makes it so commands like M-{ and M-} work.
 ;; (set (make-local-variable 'paragraph-separate) "\\'")
-;; (set (make-local-variable 'font-lock-defaults) '(sasbis-font-lock-keywords t))
-;; (set (make-local-variable 'paragraph-start) sasbis-prompt-regexp))
+;; (set (make-local-variable 'font-lock-defaults) '(sas-font-lock-keywords t))
+;; (set (make-local-variable 'paragraph-start) sas-prompt-regexp))
 
 ;; this has to be done in a hook. grumble grumble.
-(add-hook 'inferior-sasbis-mode-hook 'sasbis--initialize)
-#+end_src
+(add-hook 'inferior-sas-mode-hook 'sas--initialize)
 
-** sasbis-mode
-l'idee est de proposer un mode d'edition pour sas
-*** keymap
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-map
+(defvar sas-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-c\C-r"   #'sasbis-shell-send-region)
-    (define-key map "\C-c\C-b"   #'sasbis-shell-send-buffer)
-    (define-key map "\C-c\C-j"   #'sasbis-shell-send-line)
-    (define-key map [(control return)] #'sasbis-shell-send-dwim)
-    (define-key map "\C-c\C-q"   #'sasbis-exit)
+    (define-key map "\C-c\C-r"   #'sas-shell-send-region)
+    (define-key map "\C-c\C-b"   #'sas-shell-send-buffer)
+    (define-key map "\C-c\C-j"   #'sas-shell-send-line)
+    (define-key map [(control return)] #'sas-shell-send-dwim)
+    (define-key map "\C-c\C-q"   #'sas-exit)
    map)
-  "Keymap for `sasbis-mode'.")
-#+end_src
-*** send command
-dans ess-inf.el, l'idee est de les copier une par une puis de voir si elle reviennent toutes vers la meme commande basique qui sera a implementer en 2 methodes -> soumission en batch ou soumission en comint
-**** send string
-#+begin_src  emacs-lisp :tangle sasbis.el
-(defun sasbis-string-finish-with-ret (s)
+  "Keymap for `sas-mode'.")
+
+(defun sas-string-finish-with-ret (s)
   "Add to S \n if needed."
   (let ((start-pos (- (length s) 1)))
     (and (>= start-pos 0)
@@ -785,75 +535,69 @@ dans ess-inf.el, l'idee est de les copier une par une puis de voir si elle revie
                                 s start-pos nil t))
              s
            (concat s "\n")))))
-(defun sasbis-shell-send-string (string &optional process msg)
+(defun sas-shell-send-string (string &optional process msg)
 "Send STRING to inferior Sas PROCESS or via shell-command.
 When optional argument MSG is non-nil, forces display of a
 user-friendly message if there's no process running; defaults to
 t when called interactively."
   (interactive
    (list (read-string "Sas command: ") nil t))
-  (if sasbis-realsession
-  (let ((process (or process (sasbis-shell-get-process-or-error msg))))
-      (comint-send-string process (sasbis-string-finish-with-ret string))
+  (if sas-realsession
+  (let ((process (or process (sas-shell-get-process-or-error msg))))
+      (comint-send-string process (sas-string-finish-with-ret string))
       (when (not (string-match ".*\n[:blank:]*" string))
         (comint-send-string process "\n")))
-  (sasbis-send-string-with-shell-command string sasbis-buffer-user-library)))
-#+end_src
-**** send region
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-region (start end &optional  msg)
+  (sas-send-string-with-shell-command string sas-buffer-user-library)))
+
+(defun sas-shell-send-region (start end &optional  msg)
 "Send the region delimited by START and END to inferior Sas process.
 When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
   (interactive
    (list (region-beginning) (region-end) t))
-  (if sasbis-realsession
+  (if sas-realsession
   (let* ((string (buffer-substring-no-properties start end))
-         (process (sasbis-shell-get-process-or-error msg))
+         (process (sas-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
     (message "Sent: %s..." (match-string 1 string))
     ;; Recalculate positions to avoid landing on the wrong line if
     ;; lines have been removed/added.
     ;; (with-current-buffer (process-buffer process)
     ;;  (compilation-forget-errors))
-    (sasbis-shell-send-string string process)
+    (sas-shell-send-string string process)
     (deactivate-mark))
   (let ((string (buffer-substring-no-properties start end)))
      (message "Sent: %s..." (match-string 1 string))
-      (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
-#+end_src
-**** send line
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-line (&optional  msg)
+      (sas-send-string-with-shell-command string sas-buffer-user-library))))
+
+(defun sas-shell-send-line (&optional  msg)
 "Send the current line to the inferior ESS process.
 to inferior Sas
 process. When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
  (interactive (list t))
-  (if sasbis-realsession
+  (if sas-realsession
   (let* ((start (point-at-bol))
          (end (point-at-eol))
          (string (buffer-substring-no-properties start end))
-         (process (sasbis-shell-get-process-or-error msg))
+         (process (sas-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
     (message "Sent: %s..." (match-string 1 string))
     ;; Recalculate positions to avoid landing on the wrong line if
     ;; lines have been removed/added.
     ;; (with-current-buffer (process-buffer process)
     ;;  (compilation-forget-errors))
-    (sasbis-shell-send-string string process)
+    (sas-shell-send-string string process)
     (deactivate-mark))
   (let* ((start (point-at-bol))
          (end (point-at-eol))
          (string (buffer-substring-no-properties start end)))
      (message "Sent: %s..." (match-string 1 string))
-      (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
-#+end_src
-**** send buffer
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-buffer (&optional msg)
+      (sas-send-string-with-shell-command string sas-buffer-user-library))))
+
+(defun sas-shell-send-buffer (&optional msg)
 "Send the entire buffer to inferior Sas process.
 When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
@@ -861,12 +605,9 @@ process running; defaults to t when called interactively."
   (interactive (list t))
   (save-restriction
     (widen)
-    (sasbis-shell-send-region (point-min) (point-max)  msg)))
+    (sas-shell-send-region (point-min) (point-max)  msg)))
 
-#+end_src
-**** send file
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-file (file-name &optional process msg)
+(defun sas-shell-send-file (file-name &optional process msg)
 "Send FILE-NAME to inferior Sas PROCESS.
 When optional argument MSG is non-nil, forces display of a
 user-friendly message if there's no process running;
@@ -876,115 +617,103 @@ defaults to t when called interactively."
     (read-file-name "File to send: ")   ; file-name
     nil                                 ; process
     t))                                 ; msg
-  (if sasbis-realsession
-  (let* ((process (or process (sasbis-shell-get-process-or-error msg)))
+  (if sas-realsession
+  (let* ((process (or process (sas-shell-get-process-or-error msg)))
          (file-name (file-local-name (expand-file-name file-name)))
          (string (with-temp-buffer
     (insert-file-contents file-name)
     (buffer-string))))
-    (sasbis-shell-send-string string process t))
+    (sas-shell-send-string string process t))
   (let* ((file-name (file-local-name (expand-file-name file-name)))
          (string (with-temp-buffer
     (insert-file-contents file-name)
     (buffer-string))))
-    (sasbis-send-string-with-shell-command string sasbis-buffer-user-library))))
-#+end_src
-**** send exit et exit
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-exit (&optional process)
+    (sas-send-string-with-shell-command string sas-buffer-user-library))))
+
+(defun sas-shell-send-exit (&optional process)
 "Send \"endsas;\" to the Sas PROCESS."
   (interactive (list nil))
-  (if sasbis-realsession
-   (let* ((process (or process (sasbis-shell-get-process-or-error))))
-    (sasbis-shell-send-string "endsas;\n" process))))
-#+end_src
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-exit ()
+  (if sas-realsession
+   (let* ((process (or process (sas-shell-get-process-or-error))))
+    (sas-shell-send-string "endsas;\n" process))))
+
+(defun sas-exit ()
 "Send exit to Sas PROCESS, and close buffer."
   (interactive)
-  (if sasbis-realsession
-  (let* ((process (sasbis-shell-get-process-or-error))
+  (if sas-realsession
+  (let* ((process (sas-shell-get-process-or-error))
          (name-buffer-sas (buffer-name (process-buffer process)))
          (name-buffer-saslog (concat "Log-" (substring name-buffer-sas 1 -1))))
-    (sasbis-shell-send-exit process)
+    (sas-shell-send-exit process)
     ;; sits for a clean exit of Sas process
-    (sleep-for 0 sasbis-delay-kill-buffer)
+    (sleep-for 0 sas-delay-kill-buffer)
     ;; kill buffer
-    (if sasbis-log-separated
+    (if sas-log-separated
         (kill-buffer name-buffer-saslog))
     (kill-buffer name-buffer-sas))
   (progn
-    (kill-buffer sasbis-file-progsas)
-    (kill-buffer (sasbis-shell-command-get-errorbuffer-name 't))
-    (kill-buffer  (sasbis-shell-command-get-process-name 't))
-    (delete-file sasbis-file-progsas)
-    (delete-file (sasbis-shell-command-get-errorbuffer-name 't))
-    (delete-file (sasbis-shell-command-get-process-name 't)))))
-#+end_src
-**** send dwim
+    (kill-buffer sas-file-progsas)
+    (kill-buffer (sas-shell-command-get-errorbuffer-name 't))
+    (kill-buffer  (sas-shell-command-get-process-name 't))
+    (delete-file sas-file-progsas)
+    (delete-file (sas-shell-command-get-errorbuffer-name 't))
+    (delete-file (sas-shell-command-get-process-name 't)))))
 
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-send-dwim ()
+(defun sas-shell-send-dwim ()
 "Send the region if selected if not try to send the block
 proc/run or data/run."
   (interactive)
   (if (use-region-p)
-      (sasbis-shell-send-region (region-beginning) (region-end) t)
+      (sas-shell-send-region (region-beginning) (region-end) t)
     (let (begpos endpos nameproc)
       (save-excursion
-        (setq nameproc (sasbis-beginning-of-sas-proc))
+        (setq nameproc (sas-beginning-of-sas-proc))
         (setq begpos (point))
         (message "begpos %s" begpos))
       (if (and nameproc (string-equal (downcase nameproc) "iml"))
-          (sasbis-shell-send-line t)
+          (sas-shell-send-line t)
           (progn
             (save-excursion
-              (sasbis-end-of-sas-proc t nil)
+              (sas-end-of-sas-proc t nil)
               (setq endpos (point))
               (message "endpos %s" endpos))
-            (sasbis-shell-send-region begpos endpos t))))))
-#+end_src
+            (sas-shell-send-region begpos endpos t))))))
 
-**** utilities verif process
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-shell-get-process-or-error (&optional interactivep)
+(defun sas-shell-get-process-or-error (&optional interactivep)
 "Return inferior Sas process for current buffer or signal error.
 When argument INTERACTIVEP is non-nil, use `user-error' instead
 of `error' with a user-friendly message."
-  (or (sasbis-shell-get-process)
+  (or (sas-shell-get-process)
       (if interactivep
           (user-error
-           "Start a Sas process first with `M-x run-sasbis' or `%s'."
+           "Start a Sas process first with `M-x run-sas' or `%s'."
            ;; Get the binding.
            (key-description
             (where-is-internal
-             #'run-sasbis overriding-local-map t)))
+             #'run-sas overriding-local-map t)))
         (error
          "No inferior Sas process running."))))
-(defun sasbis-shell-get-process ()
+(defun sas-shell-get-process ()
  "Return inferior Sas process for current buffer."
-  (get-buffer-process (sasbis-shell-get-buffer)))
+  (get-buffer-process (sas-shell-get-buffer)))
 
-(defun sasbis-shell-get-buffer ()
+(defun sas-shell-get-buffer ()
 "Return inferior Sas buffer for current buffer.
-If current buffer is in `inferior-sasbis-mode', return it."
-  (if (derived-mode-p 'inferior-sasbis-mode)
+If current buffer is in `inferior-sas-mode', return it."
+  (if (derived-mode-p 'inferior-sas-mode)
       (current-buffer)
-    (let* ((dedicated-proc-name (sasbis-shell-get-process-name t))
+    (let* ((dedicated-proc-name (sas-shell-get-process-name t))
            (dedicated-proc-buffer-name (format "*%s*" dedicated-proc-name))
-           (global-proc-name  (sasbis-shell-get-process-name nil))
+           (global-proc-name  (sas-shell-get-process-name nil))
            (global-proc-buffer-name (format "*%s*" global-proc-name))
            (dedicated-running (comint-check-proc dedicated-proc-buffer-name))
            (global-running (comint-check-proc global-proc-buffer-name)))
       ;; Always prefer dedicated
       (or (and dedicated-running dedicated-proc-buffer-name)
           (and global-running global-proc-buffer-name)))))
-#+end_src
-**** movement and searches
-***** comment from syntax
-#+begin_src emacs-lisp :tangle sasbis.el
+
 (eval-and-compile
-  (defun sasbis-syntax--context-compiler-macro (form type &optional syntax-ppss)
+  (defun sas-syntax--context-compiler-macro (form type &optional syntax-ppss)
     (pcase type
       (''comment
        `(let ((ppss (or ,syntax-ppss (syntax-ppss))))
@@ -995,59 +724,57 @@ If current buffer is in `inferior-sasbis-mode', return it."
       (''paren
        `(nth 1 (or ,syntax-ppss (syntax-ppss))))
       (_ form))))
-(defun sasbis-syntax-context (type &optional syntax-ppss)
+(defun sas-syntax-context (type &optional syntax-ppss)
 "Return non-nil if point is on TYPE using SYNTAX-PPSS.
 TYPE can be `comment', `string' or `paren'.  It returns the start
 character address of the specified TYPE."
-  (declare (compiler-macro sasbis-syntax--context-compiler-macro))
+  (declare (compiler-macro sas-syntax--context-compiler-macro))
   (let ((ppss (or syntax-ppss (syntax-ppss))))
     (pcase type
       ('comment (and (nth 4 ppss) (nth 8 ppss)))
       ('string (and (nth 3 ppss) (nth 8 ppss)))
       ('paren (nth 1 ppss))
       (_ nil))))
-#+end_src
-***** movements
-#+begin_src emacs-lisp :tangle sasbis.el
-(defun sasbis-beginning-of-sas-statement ()
+
+(defun sas-beginning-of-sas-statement ()
 "Move point to beginning of current sas statement."
   (interactive)
   (if (re-search-backward ";[ \n\t]*" (point-min) t)
-      (if (sasbis-syntax-context 'comment)
-          (sasbis-beginning-of-sas-statement)
+      (if (sas-syntax-context 'comment)
+          (sas-beginning-of-sas-statement)
         (progn
           (if (looking-at ";\n")
               (forward-char 2)
             (forward-char 1))
-          (skip-chars-forward sasbis-white-chars)))
+          (skip-chars-forward sas-white-chars)))
     (goto-char (point-min))))
 
-(defun sasbis-end-of-sas-statement ()
+(defun sas-end-of-sas-statement ()
 "Move point to beginning of current sas statement."
   (interactive)
   (if (search-forward ";" nil t)
-      (if (sasbis-syntax-context 'comment)
-          (sasbis-end-of-sas-statement))
+      (if (sas-syntax-context 'comment)
+          (sas-end-of-sas-statement))
     (goto-char (point-max))))
 
-(defun sasbis-beginning-of-sas-proc (&optional redo)
+(defun sas-beginning-of-sas-proc (&optional redo)
 "Move point to the beginning of sas proc, macro or data step.
 Optional argument REDO (when non-nil) allows
 to skip the first displacement to the end of statement."
   (interactive)
   (if (not redo)
-      (sasbis-end-of-sas-statement))
+      (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
 (if (re-search-backward "[ \t\n]+proc[ \t\n]\\|[ \t\n]+data[ \t\n]+\\|[ \t\n]+%macro[ \t\n]*" (point-min) t)
-    (if (sasbis-syntax-context 'comment)
-        (sasbis-beginning-of-sas-proc t))
+    (if (sas-syntax-context 'comment)
+        (sas-beginning-of-sas-proc t))
   (goto-char (point-min)))
 (if (looking-at "[ \t\n]+proc[ \t\n]+\\([A-Za-z]+\\)")
         (setq nameproc (match-string 1)))
-      (skip-chars-forward sasbis-white-chars)
+      (skip-chars-forward sas-white-chars)
     (concat nameproc "")))
 
-(defun sasbis-end-of-sas-proc (&optional plusone redo)
+(defun sas-end-of-sas-proc (&optional plusone redo)
 "Move point to end of sas proc, macro or data step.
 If PLUSONE is non-nil point is moved forward of one char.
 Optional argument REDO (when non-nil) allows
@@ -1055,17 +782,17 @@ to skip the first displacement to the end of statement."
   (interactive (list t nil))
   (if (not redo)
       (progn
-        (sasbis-beginning-of-sas-statement)
+        (sas-beginning-of-sas-statement)
         (forward-char -1)))
   (let ((case-fold-search t))
     (if (re-search-forward "[ \t\n]+run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;" (point-max) t)
-        (if (sasbis-syntax-context 'comment)
-            (sasbis-end-of-sas-proc nil t)
+        (if (sas-syntax-context 'comment)
+            (sas-end-of-sas-proc nil t)
           (if plusone
               (forward-char 1)))
       (goto-char (point-max)))))
 
-(defun sasbis-next-sas-proc (arg)
+(defun sas-next-sas-proc (arg)
 "Move point to beginning of next sas proc, macro or data step.
 The optional argument ARG is a number that indicates the
   search direction and the number of occurrences to search for.  If it
@@ -1078,50 +805,48 @@ The optional argument ARG is a number that indicates the
     (if (re-search-forward
          "^[ \t]*\\(data[ ;]\\|proc[ ;]\\|endsas[ ;]\\|g?options[ ;]\\|%macro[ ;]\\)"
          nil t arg)
-      (if (sasbis-syntax-context 'comment)  (sasbis-next-sas-proc))
-        (sasbis-beginning-of-sas-statement 1)
+      (if (sas-syntax-context 'comment)  (sas-next-sas-proc))
+        (sas-beginning-of-sas-statement 1)
       (forward-char -1))))
-#+end_src
-**** send string via shell-command
-#+begin_src  emacs-lisp :tangle sasbis.el
-(defun sasbis-external-shell-command (session file-progsas file-result file-log)
+
+(defun sas-external-shell-command (session file-progsas file-result file-log)
   "return string: the sas command to be run.
    IF SESSION is not 'none' a personnal sas library is used"
-    (if sasbis-sas-windows
+    (if sas-sas-windows
         (if (string= session "none")
             (format "%s -SYSIN %s %s -PRINT %s -LOG %s"
-                    sasbis-shell-interpreter
+                    sas-shell-interpreter
                     file-progsas
-                    sasbis-shell-command-interpreter-args-windows
+                    sas-shell-command-interpreter-args-windows
                     file-result
                     file-log)
           (format "%s -USER %s -SYSIN %s %s -PRINT %s -LOG %s"
-                    sasbis-shell-interpreter
-                    sasbis-buffer-user-library
+                    sas-shell-interpreter
+                    sas-buffer-user-library
                     file-progsas
-                    sasbis-shell-command-interpreter-args-windows
+                    sas-shell-command-interpreter-args-windows
                     file-result
                     file-log))
       (if (string= session "none")
           (format "%s %s -log %s -print %s %s"
-                    sasbis-shell-interpreter
-                    sasbis-shell-command-interpreter-args
+                    sas-shell-interpreter
+                    sas-shell-command-interpreter-args
                     file-log
                     file-result
                     file-progsas)
         (format "%s -user %s %s -log \"%s\" -print \"%s\" %s"
-                    sasbis-shell-interpreter
-                    sasbis-buffer-user-library
-                    sasbis-shell-command-interpreter-args
+                    sas-shell-interpreter
+                    sas-buffer-user-library
+                    sas-shell-command-interpreter-args
                     file-log
                     file-result
                     file-progsas))))
-(defun sasbis-send-string-with-shell-command (string session)
+(defun sas-send-string-with-shell-command (string session)
   (let* ((name-buffer-sas (buffer-name (current-buffer)))
         (file-progsas (make-temp-file "SAS"))
         (buffer-progsas  (find-file-noselect file-progsas))
-        (file-result (sasbis-shell-command-get-process-name 't))
-        (file-log (sasbis-shell-command-get-errorbuffer-name 't)))
+        (file-result (sas-shell-command-get-process-name 't))
+        (file-log (sas-shell-command-get-errorbuffer-name 't)))
     (with-current-buffer file-result
       (set-visited-file-name file-result)
       (erase-buffer)
@@ -1136,26 +861,20 @@ The optional argument ARG is a number that indicates the
       (insert string)
       (save-buffer 0))
     (shell-command
-     (sasbis-external-shell-command session file-progsas file-result file-log)
+     (sas-external-shell-command session file-progsas file-result file-log)
      nil nil)
     (if (buffer-live-p buffer-progsas) (kill-buffer buffer-progsas))
     (if (file-exists-p file-progsas) (delete-file file-progsas))
     (if (not (string= (buffer-name) name-buffer-sas))
         (switch-to-buffer name-buffer-sas))))
-#+end_src
-*** variables
-#+begin_src emacs-lisp :tangle sasbis.el
-(defcustom ess-sasbis-tab-stop-list
+
+(defcustom ess-sas-tab-stop-list
   '(4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100 104 108 112 116 120)
-  "List of tab stop positions used by `tab-to-tab-stop' in sasbis-mode."
+  "List of tab stop positions used by `tab-to-tab-stop' in sas-mode."
   :type '(repeat integer)
-  :group 'sasbis-mode)
-#+end_src
-*** TODO indentation
-[[file:~/COURS/SAS/NOTEBOOK/ESS-master/lisp/ess-sas-a.el][ess-indent]]
-*** syntax-table
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-syntax-table
+  :group 'sas-mode)
+
+(defvar sas-mode-syntax-table
   (let ((tab (make-syntax-table)))
     (modify-syntax-entry ?\\ "."  tab)  ;; backslash is punctuation
     (modify-syntax-entry ?+  "."  tab)
@@ -1175,12 +894,9 @@ The optional argument ARG is a number that indicates the
     (modify-syntax-entry ?/  ". 14"  tab) ; comment character
     (modify-syntax-entry ?.  "w"  tab)
     tab)
-  "Syntax table for `sasbis-mode'.")
-#+end_src
- *** font-lock-defaults
-**** comment-face
-#+begin_src  emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-comment01
+  "Syntax table for `sas-mode'.")
+
+(defvar sas-mode-font-lock-comment01
   (list
   ;; .log NOTE: messages
        (cons "^NOTE [0-9]+-[0-9]+: Line generated by the invoked macro"
@@ -1241,10 +957,8 @@ The optional argument ARG is a number that indicates the
        (cons "^End:$"                              font-lock-comment-face)
        (cons "^MPRINT([_A-Z0-9]+)"                 font-lock-comment-face)
        ))
-#+end_src
-**** errors face
-#+begin_src  emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-errors02
+
+(defvar sas-mode-font-lock-errors02
   (list
        ;; .log ERROR: messages
                                         ;     (cons "^ERROR\\( [0-9]+-[1-9][0-9][0-9]\\)?: .*$"
@@ -1266,10 +980,8 @@ The optional argument ARG is a number that indicates the
        (cons "^       where a numeric operand is required. The condition was: "
              font-lock-keyword-face)
        (cons "[ ][_]+$"                            font-lock-keyword-face)))
-#+end_src
-**** warnings
-#+begin_src  emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-warnings03
+
+(defvar sas-mode-font-lock-warnings03
   (list
    ;; .log WARNING: messages
                                         ;(cons "^WARNING\\( [0-9]+-[1-9][0-9][0-9]\\)?: .*$"
@@ -1292,10 +1004,8 @@ The optional argument ARG is a number that indicates the
        ;; /* */ style handled by grammar above
        (cons "\\(^[0-9]*\\|[:;!]\\)[ \t]*%?\\*[^;/][^;]*;"
              font-lock-comment-face)))
-#+end_src
-**** overrides
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-override04
+
+(defvar sas-mode-font-lock-override04
   (list
                                             ; these over-rides need to come before the more general declarations
        (cons "\\<and("      font-lock-function-name-face)
@@ -1313,10 +1023,8 @@ The optional argument ARG is a number that indicates the
                                         ;(cons "key="      font-lock-keyword-face)
                                         ;(cons "/unique"   font-lock-keyword-face)
 ))
-#+end_src
-**** exec blocks
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-execblocks05
+
+(defvar sas-mode-font-lock-execblocks05
   (list
   ;; SAS execution blocks: DATA, %MACRO/%MEND, %DO/%END, etc.
        (cons (regexp-opt '(
@@ -1335,10 +1043,8 @@ The optional argument ARG is a number that indicates the
                         "cards;" "cards4;" "datalines;" "datalines4;" "lines;" "lines4;"
                         )))
              font-lock-constant-face)))
-#+end_src
-**** statements
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-statements06
+
+(defvar sas-mode-font-lock-statements06
   (list
        ;; SAS statements that must be followed by a semi-colon
        (cons (concat "\\<"
@@ -1356,12 +1062,10 @@ The optional argument ARG is a number that indicates the
                         )))
              font-lock-keyword-face)
    ))
-#+end_src
-**** proc names
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-procname07
+
+(defvar sas-mode-font-lock-procname07
   (list
-    ;; SASBIS procedure names
+    ;; SAS procedure names
        (cons (concat "\\<proc[ ]+"
                      (regexp-opt '(
 "access" "aceclus" "adaptivereg" "anom" "anova"
@@ -1437,10 +1141,8 @@ The optional argument ARG is a number that indicates the
                                         ;            font-lock-keyword-face)
                                         ;
    ))
-#+end_src
-**** statements
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-basegraphstatements08
+
+(defvar sas-mode-font-lock-basegraphstatements08
   (list
        ;; SAS base and SAS/Graph statements
        (cons (concat ;"\\<"
@@ -1483,19 +1185,15 @@ The optional argument ARG is a number that indicates the
                       "\\>")
              font-lock-keyword-face)
    ))
-#+end_src
-**** macros functions
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-macrosfunctions09
+
+(defvar sas-mode-font-lock-macrosfunctions09
   (list
        ;; SAS functions and SAS macro functions
        (cons "%[a-z_][a-z_0-9]*[(;]"                  font-lock-function-name-face)
                                         ;(cons "\\<call[ \t]+[a-z]+("                   font-lock-function-name-face)
    ))
-#+end_src
-**** functions
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-functions10
+
+(defvar sas-mode-font-lock-functions10
   (list
        (cons (concat ;"\\<"
               (regexp-opt
@@ -1675,26 +1373,22 @@ The optional argument ARG is a number that indicates the
               "("); "[ \t]*(")
              font-lock-function-name-face)
    ))
-#+end_src
-**** appending in one alist: =sasbis-mode-font-lock-defaults=
-#+begin_src emacs-lisp :tangle sasbis.el
-(defvar sasbis-mode-font-lock-defaults
-  (append sasbis-mode-font-lock-comment01
-sasbis-mode-font-lock-errors02
-sasbis-mode-font-lock-warnings03
-sasbis-mode-font-lock-override04
-sasbis-mode-font-lock-execblocks05
-sasbis-mode-font-lock-statements06
-sasbis-mode-font-lock-procname07
-sasbis-mode-font-lock-basegraphstatements08
-sasbis-mode-font-lock-macrosfunctions09
-sasbis-mode-font-lock-functions10))
-#+end_src
-*** setting sasbis-mode
-#+begin_src emacs-lisp :tangle sasbis.el
-(define-derived-mode sasbis-mode prog-mode "sas"
+
+(defvar sas-mode-font-lock-defaults
+  (append sas-mode-font-lock-comment01
+sas-mode-font-lock-errors02
+sas-mode-font-lock-warnings03
+sas-mode-font-lock-override04
+sas-mode-font-lock-execblocks05
+sas-mode-font-lock-statements06
+sas-mode-font-lock-procname07
+sas-mode-font-lock-basegraphstatements08
+sas-mode-font-lock-macrosfunctions09
+sas-mode-font-lock-functions10))
+
+(define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source. "
-  :group 'sasbis-mode
+  :group 'sas-mode
   ;; (ess-setq-vars-local SAS-customize-alist)
   ;; (setq ess-local-customize-alist SAS-customize-alist)
   (setq-local sentence-end ";[\t\n */]*")
@@ -1702,18 +1396,18 @@ sasbis-mode-font-lock-functions10))
   (setq-local paragraph-separate "^[ \t]*$")
   (setq-local paragraph-ignore-fill-prefix t)
   (setq-local adaptive-fill-mode nil)
-  (setq-local indent-line-function #'sasbis-indent-line)
+  (setq-local indent-line-function #'sas-indent-line)
   (setq-local comment-start "/*")
   (setq-local comment-start-skip "/[*]")
   (setq-local comment-end "*/")
   (setq-local comment-end-skip "[*]/")
   (setq-local comment-column 40)
   ;;  (setq-local ess-local-process-name nil)
-  (setq-local tab-stop-list ess-sasbis-tab-stop-list)
+  (setq-local tab-stop-list ess-sas-tab-stop-list)
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
-        '(sasbis-mode-font-lock-defaults nil t))
-  (set-syntax-table sasbis-mode-syntax-table))
+        '(sas-mode-font-lock-defaults nil t))
+  (set-syntax-table sas-mode-syntax-table))
 
   ;; thing for either batch or interactive sessions
   ;; however, neither of these solutions are planned
@@ -1726,13 +1420,7 @@ sasbis-mode-font-lock-functions10))
   ;;  (define-key sas-mode-local-map "\C-c\C-x" 'ess-sas-goto-log)
   ;;  (define-key sas-mode-local-map "\C-c\C-y" 'ess-sas-goto-lst)
 
-(add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sasbis-mode))
+(add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
 
-#+end_src
-
-* fin de sasbis.el
-#+begin_src emacs-lisp :tangle sasbis.el
-(provide 'sasbis)
-;;; sasbis.el ends here
-#+end_src
-
+(provide 'sas)
+;;; sas.el ends here
