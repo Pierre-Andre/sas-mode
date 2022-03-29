@@ -8,12 +8,12 @@
 ;; Author: Rodney A. Sparapani
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
-;; Created: avril 28, 2021
-;; Modified: december 28, 2021
-;; Version: 0.1.0
+;; Created: april 28, 2021
+;; Modified: 2022-03-29
+;; Version: 0.9.0
 ;; Keywords: Symbol’s value as variable is void: finder-known-keywords
 ;; Homepage: https://github.com/
-;; Package-Requires: ((emacs "24.3"))
+;; Package-Requires: ((emacs "25.1"))
 ;;
 ;; This file is not part of GNU Emacs.
 ;;
@@ -26,7 +26,7 @@
 ;;;            Madison, WI 53706
 ;;;            cook@biostat.wisc.edu
 ;;;
-;;;  Acknowledgements:
+;;;  Acknowledgements for ESS SAS-mode
 ;;;  Menu code for XEmacs/Lucid emacs and startup mods
 ;;;  contributed by arossini@biostats.hmc.psu.edu
 ;;;
