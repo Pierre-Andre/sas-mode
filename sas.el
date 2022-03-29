@@ -255,7 +255,7 @@ use `start-file-process'."
 
 (defun sas--clean-eol (string)
   "Function to remove page-break."
-  (replace-regexp-in-string "\014" "" string))
+  (replace-regexp-in-string "\014" "\n" string))
 
 (defun run-sas (&optional cmd dedicated show)
 "Run an inferior Sas process.
@@ -403,8 +403,13 @@ killed."
                 (args (cdr cmdlist))
                 (bufstderr (if sas-log-separated
                              (get-buffer-create (sas-shell-get-errorbuffer-name dedicated))))
-                (buffer (apply #'make-comint-in-buffer-std proc-name proc-buffer-name
-                               interpreter nil bufstderr args))
+                (buffer (if sas-log-separated
+                            (apply #'make-comint-in-buffer-std
+                                   proc-name proc-buffer-name
+                                   interpreter nil bufstderr args)
+                          (apply #'make-comint-in-buffer
+                                   proc-name proc-buffer-name
+                                   interpreter nil args)))
                 (sas-shell--parent-buffer (current-buffer))
                 (process (get-buffer-process buffer))
                 ;; Users can override the interpreter and args
