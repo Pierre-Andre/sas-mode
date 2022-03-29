@@ -253,6 +253,10 @@ use `start-file-process'."
                        (list :command (cons program program-args)))
                    )))  )
 
+(defun sas--clean-eol (string)
+  "Function to remove page-break."
+  (replace-regexp-in-string "\014" "" string))
+
 (defun run-sas (&optional cmd dedicated show)
 "Run an inferior Sas process.
 
@@ -481,19 +485,12 @@ that they are prioritized when looking for executables."
     (if (not (string= (buffer-name) (buffer-name buffer-sas)))
         (switch-to-buffer buffer-sas))))
 
-;; (defvar sas-cli-file-path "/usr/local/bin/sas_u8"
-;;   "Path to the program used by `run-sas'")
-;; (defvar sas-cli-arguments '("-nodms" "-nonews" "-stdio"
-;;                             "-nofullstimer" "-nodate" "-nocenter"
-;;                             "-terminal" "-pagesize" "max"
-;;                             "-nosyntaxcheck")
-;;   "Commandline arguments to pass to `sas-cli'.")
-;; to print sas options list add "-oplist" to sas-cli-arguments
 (defvar sas-prompt-regexp "^"
 "Prompt for `run-sas'.")
 (defun sas--initialize ()
   "Helper function to initialize Sas"
   (setq comint-process-echoes t)
+  (add-hook 'comint-preoutput-filter-functions 'sas--clean-eol 0 'make-it-local)
   (setq comint-use-prompt-regexp t))
 
 (define-derived-mode inferior-sas-mode comint-mode "Inferior sas"
@@ -504,17 +501,6 @@ that they are prioritized when looking for executables."
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
         '(sas-mode-font-lock-defaults nil t)))
-;;  (set-syntax-table sas-mode-syntax-table))
-;; this makes it read only; a contentious subject as some prefer the
-;; buffer to be overwritable.
-;; (setq comint-prompt-read-only t)
-;; (setq comint-process-echoes t)
-;; this makes it so commands like M-{ and M-} work.
-;; (set (make-local-variable 'paragraph-separate) "\\'")
-;; (set (make-local-variable 'font-lock-defaults) '(sas-font-lock-keywords t))
-;; (set (make-local-variable 'paragraph-start) sas-prompt-regexp))
-
-;; this has to be done in a hook. grumble grumble.
 (add-hook 'inferior-sas-mode-hook 'sas--initialize)
 
 (defvar sas-mode-map
@@ -1389,36 +1375,24 @@ sas-mode-font-lock-functions10))
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source. "
   :group 'sas-mode
-  ;; (ess-setq-vars-local SAS-customize-alist)
-  ;; (setq ess-local-customize-alist SAS-customize-alist)
   (setq-local sentence-end ";[\t\n */]*")
   (setq-local paragraph-start "^[ \t]*$")
   (setq-local paragraph-separate "^[ \t]*$")
   (setq-local paragraph-ignore-fill-prefix t)
   (setq-local adaptive-fill-mode nil)
-  (setq-local indent-line-function #'sas-indent-line)
+  ;(setq-local indent-line-function #'sas-indent-line)
   (setq-local comment-start "/*")
   (setq-local comment-start-skip "/[*]")
   (setq-local comment-end "*/")
   (setq-local comment-end-skip "[*]/")
   (setq-local comment-column 40)
-  ;;  (setq-local ess-local-process-name nil)
-  (setq-local tab-stop-list ess-sas-tab-stop-list)
+;  (setq-local tab-stop-list ess-sas-tab-stop-list)
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
         '(sas-mode-font-lock-defaults nil t))
   (set-syntax-table sas-mode-syntax-table))
+(add-hook 'sas-mode-hook 'sas--initialize)
 
-  ;; thing for either batch or interactive sessions
-  ;; however, neither of these solutions are planned
-  ;; therefore, no key definitions can be shared between
-  ;; batch and interactive at this time, hence the lines that
-  ;; are commented below:  uncomment at your own risk
-  ;;  (define-key sas-mode-local-map "\C-c\C-p" 'ess-sas-file-path)
-  ;;  (define-key sas-mode-local-map "\C-c\C-b" 'ess-sas-submit)
-  ;;  (define-key sas-mode-local-map "\C-c\C-r" 'ess-sas-submit-region)
-  ;;  (define-key sas-mode-local-map "\C-c\C-x" 'ess-sas-goto-log)
-  ;;  (define-key sas-mode-local-map "\C-c\C-y" 'ess-sas-goto-lst)
 
 (add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
 
