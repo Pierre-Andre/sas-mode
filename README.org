@@ -23,8 +23,10 @@ ESS does not update SAS-mode anymore. To have syntaxic coloration, session (as i
 It could be used with ob-sas.el to make sas src block in org mode files. As I don't have windows I don't know if it works on windows.
 ** Examples
 1. Start sas
+
    In a file with sas mode enabled, start SAS with =run-sas= (=M-x run-sas=)
 2. Submit commands
+
    sas comes with several shortcuts to submit sas commands
    #+begin_src emacs-lisp
    (defvar sas-mode-map
@@ -45,7 +47,9 @@ It could be used with ob-sas.el to make sas src block in org mode files. As I do
 - The custom variable =sas-shell-interpreter= is  =sas= but it can be useful to point to another sas executable.
 - The custom =sas-sas-windows= can be set to =t= if SAS windows is used
 - The custom =sas-realsession= can be set to nil on windows in order to create a temporary user library and submit SAS region using SAS batch mechanism.
-- For [[https://github.com/hlissner/doom-emacs][doom emacs]] the following code in =config.el=
+- For [[https://github.com/hlissner/doom-emacs][doom emacs]]
+
+  the following code in =config.el=
   #+begin_src emacs-lisp
   (after! ess
   (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist)))
