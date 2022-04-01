@@ -10,7 +10,7 @@
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
 ;; Modified: 2022-03-29
-;; Version: 0.9.0
+;; Version: 0.6.0
 ;; Keywords: Symbol’s value as variable is void: finder-known-keywords
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "25.1"))
@@ -522,6 +522,7 @@ that they are prioritized when looking for executables."
     (define-key map "\C-c\C-b"   #'sas-shell-send-buffer)
     (define-key map "\C-c\C-j"   #'sas-shell-send-line)
     (define-key map [(control return)] #'sas-shell-send-dwim)
+    (define-key map "\C-c\C-v"   #'sas-view-table)
     (define-key map "\C-c\C-q"   #'sas-exit)
    map)
   "Keymap for `sas-mode'.")
