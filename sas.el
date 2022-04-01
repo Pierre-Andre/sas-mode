@@ -48,7 +48,7 @@
   :type 'string
   :group 'sas)
 (defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
-  "Default arguments for the Sas interpreter to make a real session using comint (-stdio is the important part)."
+  "Default arguments for the Sas interpreter to make a real session using comint (-nodms -stdio is the important part)."
   :type 'string
   :group 'sas)
 (defcustom sas-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
@@ -81,6 +81,10 @@
   "Delay in millisecs between endsas; and killing windows"
   :group 'sas
   :type  'integer)
+(defcustom sas-verbose nil
+  "If not nil message in minibuffer"
+  :group 'sas
+  :type  'boolean)
 
 (defcustom sas-user-library nil
   "Name of SAS user library, if none no user library is created, if nil a temp dir is created, else an existing dir is used"
@@ -94,6 +98,10 @@
   "If nil in a fake session windows shell syntax is used to execute sas program, else unix/linux syntax is used"
   :group 'sas
   :type  'string)
+(defcustom sas-view-maxnumber-of-rows 3
+  "Maximum number of rows displayed in `sas-view-table'"
+  :group 'sas
+  :type  'integer)
 
 (defun make-comint-in-buffer-std (name buffer program &optional startcommand stderr &rest switches)
 "Make a Comint process NAME in BUFFER, running PROGRAM.
@@ -551,7 +559,7 @@ process running; defaults to t when called interactively."
   (let* ((string (buffer-substring-no-properties start end))
          (process (sas-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
-    (message "Sent: %s..." (match-string 1 string))
+    (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
     ;; Recalculate positions to avoid landing on the wrong line if
     ;; lines have been removed/added.
     ;; (with-current-buffer (process-buffer process)
@@ -559,13 +567,12 @@ process running; defaults to t when called interactively."
     (sas-shell-send-string string process)
     (deactivate-mark))
   (let ((string (buffer-substring-no-properties start end)))
-     (message "Sent: %s..." (match-string 1 string))
+     (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
       (sas-send-string-with-shell-command string sas-buffer-user-library))))
 
 (defun sas-shell-send-line (&optional  msg)
-"Send the current line to the inferior ESS process.
-to inferior Sas
-process. When optional argument MSG is
+"Send the current line to the inferior SAS process.
+ When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
  (interactive (list t))
@@ -575,7 +582,7 @@ process running; defaults to t when called interactively."
          (string (buffer-substring-no-properties start end))
          (process (sas-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
-    (message "Sent: %s..." (match-string 1 string))
+    (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
     ;; Recalculate positions to avoid landing on the wrong line if
     ;; lines have been removed/added.
     ;; (with-current-buffer (process-buffer process)
@@ -585,7 +592,7 @@ process running; defaults to t when called interactively."
   (let* ((start (point-at-bol))
          (end (point-at-eol))
          (string (buffer-substring-no-properties start end)))
-     (message "Sent: %s..." (match-string 1 string))
+    (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
       (sas-send-string-with-shell-command string sas-buffer-user-library))))
 
 (defun sas-shell-send-buffer (&optional msg)
@@ -660,14 +667,14 @@ proc/run or data/run."
       (save-excursion
         (setq nameproc (sas-beginning-of-sas-proc))
         (setq begpos (point))
-        (message "begpos %s" begpos))
+        (when sas-verbose (message "begpos %s" begpos)))
       (if (and nameproc (string-equal (downcase nameproc) "iml"))
           (sas-shell-send-line t)
           (progn
             (save-excursion
               (sas-end-of-sas-proc t nil)
               (setq endpos (point))
-              (message "endpos %s" endpos))
+              (when sas-verbose (message "endpos %s" endpos)))
             (sas-shell-send-region begpos endpos t))))))
 
 (defun sas-shell-get-process-or-error (&optional interactivep)
@@ -858,6 +865,67 @@ The optional argument ARG is a number that indicates the
     (if (file-exists-p file-progsas) (delete-file file-progsas))
     (if (not (string= (buffer-name) name-buffer-sas))
         (switch-to-buffer name-buffer-sas))))
+
+(defun sas--get-point-symbol ()
+  "Get symbol at point."
+  (if (region-active-p)
+      (buffer-substring-no-properties (region-beginning) (region-end))
+    (if (version< emacs-version "24.4")
+        (thing-at-point 'symbol)
+      (thing-at-point 'symbol t))))
+
+(defun sas-fsview-table  (&optional table edit)
+  "Open a proc fsview on TABLE or region or point.
+If EDIT is not nil fsview in edit mode else browseonly "
+   (interactive
+   (list (if current-prefix-arg
+        (read-from-minibuffer
+         "SAS Table: ") nil)
+         nil))
+   (let* ((lookfor-table (or table (sas--get-point-symbol)))
+          (sas-command (concat "proc fsview"
+                               (unless edit
+                                 " BROWSEONLY")
+                               " data=" lookfor-table "; run;")))
+    (if sas-realsession
+        (let ((process (sas-shell-get-process-or-error nil)))
+          (when sas-verbose (message "Sent: %s" sas-command))
+          (sas-shell-send-string sas-command process))
+      (progn
+        (when sas-verbose (message "Sent: %s" sas-command))
+        (sas-send-string-with-shell-command sas-command sas-buffer-user-library)))))
+
+(defun sas-fsview-edit-table  (&optional table)
+  "Open a proc fsview on TABLE or region or point."
+  (interactive
+   (list
+    (if current-prefix-arg
+        (read-from-minibuffer "SAS Table: ")
+      nil)))
+  (let ((lookfor-table (or table (sas--get-point-symbol))))
+    (sas-fsview-table lookfor-table 't)))
+
+(defun sas-view-table  (&optional table)
+  "launch a proc print on TABLE or region or point."
+   (interactive
+   (list (if current-prefix-arg
+        (read-from-minibuffer
+         "SAS Table: ")
+        nil)))
+   (let* ((lookfor-table (or table (sas--get-point-symbol)))
+          (sas-command
+           (concat "proc print data="
+                   lookfor-table
+                   "(obs="
+                   (number-to-string sas-view-maxnumber-of-rows)
+                   "); run;")))
+    (if sas-realsession
+        (let ((process (sas-shell-get-process-or-error nil)))
+          (when sas-verbose (message "Sent: %s" sas-command))
+          (sas-shell-send-string sas-command process))
+      (progn
+        (when sas-verbose (message "Sent: %s" sas-command))
+        (sas-send-string-with-shell-command sas-command sas-buffer-user-library)))))
 
 (defcustom ess-sas-tab-stop-list
   '(4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100 104 108 112 116 120)

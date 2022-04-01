@@ -1,44 +1,68 @@
 * sasbis a sas mode for emacs
 sas mode for emacs
 ** Installation
-   1. Download (or clone) =sasbis.el= and put it in your emacs
+   1. Download (or clone) =sas.el= and put it in your emacs
       directory (for example the directory
       =/home/foouser/.emacs.d/lisp=)
 
    2. To use SAS as another babel language, add the following to your
       =.emacs=
       #+begin_src emacs-lisp
-      (load "/home/foouser/.emacs.d/lisp/sasbis.el")
-      (require 'sasbis)
+      (load "/home/foouser/.emacs.d/lisp/sas.el")
+      (require 'sas)
       #+end_src
-      If you use ESS (for R) and sasbis you should disable the automatic loading of SAS-mode from ESS and load sasbis after:
+      If you use ESS (for R) and sas you should disable the automatic loading of SAS-mode from ESS and load sas after:
       #+begin_src emacs-lisp
       (require 'ess)
       (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist))
-      (load "/home/foouser/.emacs.d/lisp/sasbis.el")
-      (require 'sasbis)
+      (load "/home/foouser/.emacs.d/lisp/sas.el")
+      (require 'sas)
       #+end_src
 ** Philosophy
-ESS does not update SAS-mode anymore. To have syntaxic coloration, session (as in python-mode) and keyboard shortcuts as in elpy or ESS, I have made a compilation of these sources into this sasbis.el.
+ESS does not update SAS-mode anymore. To have syntaxic coloration, session (as in python-mode) and keyboard shortcuts as in elpy or ESS, I have made a compilation of these sources into this sas.el.
 It could be used with ob-sas.el to make sas src block in org mode files. As I don't have windows I don't know if it works on windows.
 ** Examples
 1. Start sas
-   In a file with sasbis mode enabled, start SAS with =run-sasbis= (=M-x run-sasbis=)
+   In a file with sas mode enabled, start SAS with =run-sas= (=M-x run-sas=)
 2. Submit commands
-   sasbis comes with several shortcuts to submit sas commands
+   sas comes with several shortcuts to submit sas commands
    #+begin_src emacs-lisp
-   (defvar sasbis-mode-map
+   (defvar sas-mode-map
     (let ((map (make-sparse-keymap)))
-      (define-key map "\C-c\C-r"   #'sasbis-shell-send-region)
-      (define-key map "\C-c\C-b"   #'sasbis-shell-send-buffer)
-      (define-key map "\C-c\C-j"   #'sasbis-shell-send-line)
-      (define-key map [(control return)] #'sasbis-shell-send-dwim)
-      (define-key map "\C-c\C-q"   #'sasbis-exit)
+      (define-key map "\C-c\C-r"   #'sas-shell-send-region)
+      (define-key map "\C-c\C-b"   #'sas-shell-send-buffer)
+      (define-key map "\C-c\C-j"   #'sas-shell-send-line)
+      (define-key map [(control return)] #'sas-shell-send-dwim)
+      (define-key map "\C-c\C-v"   #'sas-view-table)
+      (define-key map "\C-c\C-q"   #'sas-exit)
       map)
-    "Keymap for `sasbis-mode'.")
+    "Keymap for `sas-mode'.")
    #+end_src
-   For instance a control-return in a middle of a data step or a proc step will send the whole data step or proc step to SAS.
+   - For instance a =C-RET= control-return (=sas-shell-send-dwim=) in a middle of a data step or a proc step will send the whole data step or proc step to SAS.
+   - =C-c C-v= (=sas-view-table=) when point is on a SAS data-table print the first three lines (customize =sas-view-maxnumber-of-rows= variable allows to control the number of displayed rows). For users who prefer =proc fsview= =sas-fsview-table= or =sas-fsview-edit-table= can be used instead.
+   - =C-c C-q= will close the SAS buffers
 ** Config
-- The custom variable =sasbis-shell-interpreter= is  =sas= but it can be useful to point to another sas executable.
-- The custom =sasbis-sas-windows= can be set to =t= if SAS windows is used
-- The custom =sasbis-realsession= can be set to nil on windows in order to create a temporary user library an submit SAS piece of progran using SAS batch mechanism.
+- The custom variable =sas-shell-interpreter= is  =sas= but it can be useful to point to another sas executable.
+- The custom =sas-sas-windows= can be set to =t= if SAS windows is used
+- The custom =sas-realsession= can be set to nil on windows in order to create a temporary user library and submit SAS region using SAS batch mechanism.
+- For [[https://github.com/hlissner/doom-emacs][doom emacs]] the following code in =config.el=
+  #+begin_src emacs-lisp
+  (after! ess
+  (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist)))
+  (use-package sas)
+  (after! sas
+    (map! :map sas-mode-map
+       :localleader
+       "RET" #'sas-shell-send-dwim
+       "r" #'sas-shell-send-region
+       "j" #'sas-shell-send-line
+       "v" #'sas-view-table
+       "q" #'sas-exit
+       "b" #'sas-shell-send-buffer))
+  #+end_src
+  and the classical loading mechanism in =package.el=
+  #+begin_src emacs-lisp
+  (package! sas
+    :recipe (:host github :repo "Pierre-Andre/sas-mode"))
+  #+end_src
+  should work.
