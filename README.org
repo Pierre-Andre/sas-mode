@@ -41,7 +41,7 @@ It could be used with ob-sas.el to make sas src block in org mode files. As I do
     "Keymap for `sas-mode'.")
    #+end_src
    - For instance a =C-RET= control-return (=sas-shell-send-dwim=) in a middle of a data step or a proc step will send the whole data step or proc step to SAS.
-   - =C-c C-v= (=sas-view-table=) when point is on a SAS data-table print the first three lines (customize =sas-view-maxnumber-of-rows= variable allows to control the number of displayed rows). For users who prefer =proc fsview= =sas-fsview-table= or =sas-fsview-edit-table= can be used instead.
+   - =C-c C-v= (=sas-view-table=) when point is on a SAS data-table print the first three lines (customize =sas-view-maxnumber-of-rows= variable to change the number of displayed rows). For users who prefer =proc fsview= =sas-fsview-table= or =sas-fsview-edit-table= can be used instead.
    - =C-c C-q= will close the SAS buffers
 ** Config
 - The custom variable =sas-shell-interpreter= is  =sas= but it can be useful to point to another sas executable.
@@ -51,8 +51,10 @@ It could be used with ob-sas.el to make sas src block in org mode files. As I do
 
   the following code in =config.el=
   #+begin_src emacs-lisp
+  ;; to disable ESS SAS-mode
   (after! ess
   (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist)))
+  ;; sas-mode using sas.el
   (use-package sas)
   (after! sas
     (map! :map sas-mode-map
@@ -70,3 +72,13 @@ It could be used with ob-sas.el to make sas src block in org mode files. As I do
     :recipe (:host github :repo "Pierre-Andre/sas-mode"))
   #+end_src
   should work.
+- For windows user  =sas-sas-windows= must be set to non-nil and =sas-realsession= must be set to nil, for instance using the following code in =.emacs=
+   #+begin_src emacs-lisp
+   ;; to disable ESS SAS-mode
+   (require 'ess)
+   (setq auto-mode-alist (delete '("\\.[Ss][Aa][Ss]\\'" . SAS-mode) auto-mode-alist))
+   ;; sas-mode using sas.el
+   (load "/home/foouser/.emacs.d/lisp/sas.el")
+   (require 'sas)
+   (setq sas-sas-windows 't sas-realsession nil)
+   #+end_src
