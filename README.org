@@ -1,4 +1,4 @@
-* sasbis a sas mode for emacs
+* sas.el a sas mode for emacs
 sas mode for emacs
 ** Installation
    1. Download (or clone) =sas.el= and put it in your emacs
