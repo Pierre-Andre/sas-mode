@@ -47,18 +47,15 @@
   "If nil SAS buffer will contains LOG and Output."
   :type 'string
   :group 'sas)
-(defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
-  "Default arguments for the Sas interpreter to make a real session using comint (-nodms -stdio is the important part)."
+(defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck -cleanup"
+  "Default arguments for the Sas interpreter to make a real session using comint.
+\"-nodms -stdio\" is the important part."
   :type 'string
   :group 'sas)
 (defcustom sas-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
   "Default arguments for the Sas interpreter."
   :type 'string
   :group 'sas)
-;; (defcustom sas-shell-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON"
-;;   "Default arguments for the Sas interpreter to make a real session using comint windows version (not tested)."
-;;   :type 'string
-;;   :group 'sas)
 (defcustom sas-shell-command-interpreter-args-windows "-NOTERMINAL NOSPLASH -NOSTATUSWIN -NOICON "
   "Default arguments for the Sas interpreter."
   :type 'string
@@ -684,12 +681,13 @@ When argument INTERACTIVEP is non-nil, use `user-error' instead
 of `error' with a user-friendly message."
   (or (sas-shell-get-process)
       (if interactivep
-          (user-error
-           "Start a Sas process first with `M-x run-sas' or `%s'."
-           ;; Get the binding.
-           (key-description
-            (where-is-internal
-             #'run-sas overriding-local-map t)))
+          (run-sas)
+          ;; (user-error
+          ;;  "Start a Sas process first with `M-x run-sas' or `%s'."
+          ;;  ;; Get the binding.
+          ;;  (key-description
+          ;;   (where-is-internal
+          ;;    #'run-sas overriding-local-map t)))
         (error
          "No inferior Sas process running."))))
 (defun sas-shell-get-process ()
