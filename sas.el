@@ -865,6 +865,28 @@ The optional argument ARG is a number that indicates the
     (if (not (string= (buffer-name) name-buffer-sas))
         (switch-to-buffer name-buffer-sas))))
 
+(defun sas-shell-dedicated ()
+  "is it a dedicated process or not"
+  (let* ((global-proc-name  (sas-shell-get-process-name nil))
+           (global-proc-buffer-name (format "*%s*" global-proc-name))
+           (current-proc-buffer-name (sas-shell-get-buffer)))
+    (if (string= global-proc-buffer-name current-proc-buffer-name)
+        nil t)))
+
+(defun sas-clear-log-buffer ()
+    "send comint-clear-buffer to log file."
+  (interactive)
+  (if sas-realsession
+  (let ((file-log (sas-shell-command-get-errorbuffer-name (sas-shell-dedicated))))
+    (with-current-buffer file-log
+      (comint-clear-buffer)))))
+
+(defun sas-clear-output-buffer ()
+    "send comint-clear-buffer to log file."
+  (interactive)
+    (with-current-buffer (format "*%s*" (sas-shell-get-process-name nil))
+      (comint-clear-buffer)))
+
 (defun sas--get-point-symbol ()
   "Get symbol at point."
   (if (region-active-p)
@@ -1459,6 +1481,7 @@ sas-mode-font-lock-functions10))
   (setq-local comment-end-skip "[*]/")
   (setq-local comment-column 40)
 ;  (setq-local tab-stop-list ess-sas-tab-stop-list)
+  ;; (smie-setup smie-sample-grammar #'smie-sample-rules)
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
         '(sas-mode-font-lock-defaults nil t))
