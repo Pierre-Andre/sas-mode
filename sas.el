@@ -1265,9 +1265,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
  ("partition" . ("casstat" "casstat_partition_syntax02.htm"))
  ("smspec" . ("casforecast" "casforecast_smspec_syntax02.htm"))
  ("prtexp" . ("proc" "p0kqciwgisfnd8n1e2i5goiehp3i.htm"))
- ("tmodel" . ("etsug" "etsug_tmodel_syntax12.htm"))
-)
-)
+ ("tmodel" . ("etsug" "etsug_tmodel_syntax12.htm"))))
 
 (defun sas-doc-proc-dwim ()
   "return help for proc name at point."
@@ -1277,35 +1275,27 @@ If EDIT is not nil fsview in edit mode else browseonly "
          (url-prochelp (concat
                         "https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/"
                         (car helplist) "/" (car (cdr helplist)))))
-    (message "portion %s" helplist)
-    (message "url: %s" url-prochelp)
     (browse-url url-prochelp)))
-
-(defcustom ess-sas-tab-stop-list
-  '(4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100 104 108 112 116 120)
-  "List of tab stop positions used by `tab-to-tab-stop' in sas-mode."
-  :type '(repeat integer)
-  :group 'sas-mode)
 
 (defvar sas-mode-syntax-table
   (let ((tab (make-syntax-table)))
-    (modify-syntax-entry ?\\ "."  tab)  ;; backslash is punctuation
-    (modify-syntax-entry ?+  "."  tab)
-    (modify-syntax-entry ?-  "."  tab)
-    (modify-syntax-entry ?=  "."  tab)
-    (modify-syntax-entry ?%  "w"  tab)
-    (modify-syntax-entry ?<  "."  tab)
-    (modify-syntax-entry ?>  "."  tab)
-    (modify-syntax-entry ?&  "w"  tab)
-    (modify-syntax-entry ?|  "."  tab)
-    (modify-syntax-entry ?\' "\"" tab)
-    (modify-syntax-entry ?*  ". 23"  tab) ; comment character
-    (modify-syntax-entry ?\; "."  tab)
-    (modify-syntax-entry ?_  "w"  tab)
-    (modify-syntax-entry ?<  "."  tab)
-    (modify-syntax-entry ?>  "."  tab)
-    (modify-syntax-entry ?/  ". 14"  tab) ; comment character
-    (modify-syntax-entry ?.  "w"  tab)
+    (modify-syntax-entry ?*  ". 23" ) ; comment character
+    (modify-syntax-entry ?/  ". 14" ) ; comment character
+    (modify-syntax-entry ?\; "." )
+    (modify-syntax-entry ?%  "w" )
+    (modify-syntax-entry ?&  "w" )
+    (modify-syntax-entry ?_  "w" )
+    (modify-syntax-entry ?.  "w" )
+    (modify-syntax-entry ?\\ "." )  ;; backslash is punctuation
+    (modify-syntax-entry ?+  "." )
+    (modify-syntax-entry ?-  "." )
+    (modify-syntax-entry ?=  "." )
+    (modify-syntax-entry ?<  "." )
+    (modify-syntax-entry ?>  "." )
+    (modify-syntax-entry ?|  "." )
+    (modify-syntax-entry ?\' "\"")
+    (modify-syntax-entry ?<  "." )
+    (modify-syntax-entry ?>  "." )
     tab)
   "Syntax table for `sas-mode'.")
 
@@ -1800,46 +1790,138 @@ sas-mode-font-lock-macrosfunctions09
 sas-mode-font-lock-functions10))
 
 (require 'smie)
-(defvar smiex-sample-grammar nil
+(defvar sas-smie-sample-grammar nil
   "Sample BNF grammar for `smie'.")
-(setq smiex-sample-grammar
-  (smie-prec2->grammar
-   (smie-bnf->prec2
-    '((atom)
-      (dataequal ("data" "=" atom))
-      (insts (insts ";" insts) (inst))
-      (procrun ("proc" insts "run"))
-      (datarun ("data" insts "run")))
-    '((assoc ";")))))
+(setq sas-smie-sample-grammar
+      (smie-prec2->grammar
+       (smie-merge-prec2s
+        (smie-bnf->prec2
+         '((atom)
+           (formula
+            ("(" formula ")")
+            (atom "*" atom)
+            (atom "|" atom)
+                  (atom))
+           ;; (instsp (instsp ";" instsp) (instp))
+           (instsd (instsd ";" instsd) (instd))
+           (instsm (instsm ";" instsm) (instm))
+           (instsp (instsp ";" instsp) (instp))
+           (instp
+                   ("dataequal" "=" atom)
+                    ("model" atom "=" formula)
+                    (output)
+                   (atom))
+           ;; (instp (dataeq)
+           ;;        (output)
+           ;;        (instp))
+           ;; (model ("model" atom "=" atoms))
+            (output ("output" instp)
+                    ("output" "out" "=" instp))
+           (instd ("do" instsd "end")
+                  ("if" instd "then" instd)
+                  ("else" instd)
+                  (instd))
+           (instm ("%do" instsm "%end")
+                  ("%if" instm "%then" instm)
+                  ("%else" instm)
+                  (instm))
+           (procrun ("proc" instsp "run"))
+           (datarun ("data" instsd "run"))
+           (macro ("%macro" instsm "%mend")))
+         '((assoc ";")
+           (assoc "=")))
+        (smie-precs->prec2
+         '((assoc ";")
+           (assoc "&" "AND")
+           (assoc "|" "OR")
+           (nonassoc "IN")
+           (nonassoc ">" "GT")
+           (nonassoc ">=" "GE")
+           (nonassoc "!=" "~=" "NE")
+           (nonassoc "EQ")
+           (nonassoc "<=" "LE")
+           (nonassoc "<" "LT")
+           (assoc "+" "-")
+           (assoc "*" "/")
+           (assoc "><" "MIN")
+           (assoc "<>" "MAX")
+           (nonassoc "~" "^" "NOT")    ;And unary "+" and "-".
+           (right "**")))
+       )))
 
-(defun smiex-sample-rules (kind token)
+(defun sas--data-token ()
+  "choose beetween data ... run and data= ."
+  (save-excursion
+    (let ((tok2 (smie-default-forward-token)))
+      (cond
+       ((string= tok2 "=")
+        "dataequal")
+       ((string= tok2 "data")
+        (if (string= (smie-default-forward-token) "=")
+            "dataequal"
+          "data"))
+       (t "data")))))
+
+(defun sas-forward-token ()
+  (forward-comment (point-max))
+  (let ((tok (smie-default-forward-token)))
+        (cond
+         ((equal tok "data") (sas--data-token))
+         (t tok))))
+
+(defun sas-backward-token ()
+  (let ((tok (smie-default-backward-token)))
+    (forward-comment (- (point)))
+    (cond
+     ;; ((and (equal tok "") (looking-at "\n"))
+     ;;  (let ((pos (point)))
+     ;;    (if (not (= 0 (mod (skip-chars-backward "\\\\") 2)))
+     ;;        (sas-backward-token)
+     ;;      (goto-char pos)
+     ;;      tok)))
+     ((equal tok "data") (sas--data-token))
+     (t tok))))
+
+(defun sas-smie-sample-rules (kind token)
   "Perform indentation of KIND on TOKEN using the `smie' engine."
   (pcase (list kind token)
-    ('(:after "run")
-     (smie-rule-parent))
+    ;; From Octave-mode:
+    ;; We could set smie-indent-basic instead, but that would have two
+    ;; disadvantages:
+    ;; - changes to sas-block-offset wouldn't take effect immediately.
+    ;; - edebug wouldn't show the use of this variable.
+    ('(:after "%macro") smie-indent-basic)
+    ('(:after "proc") smie-indent-basic)
+    ('(:after "data") smie-indent-basic)
+    ('(:after "dataequal") 0)
+    (`(:before . ,(or `"do" `"("))
+     (if (smie-rule-hanging-p) (smie-rule-parent)))    ;; (message "token backward: %s" tok)
+    ('(:after "run") (smie-rule-parent))
+    ('(:after "%mend") (smie-rule-parent))
     ('(:elem arg) 1)))
 
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source. "
   :group 'sas-mode
-  (setq-local sentence-end ";[\t\n */]*")
-  (setq-local paragraph-start "^[ \t]*$")
-  (setq-local paragraph-separate "^[ \t]*$")
-  (setq-local paragraph-ignore-fill-prefix t)
-  (setq-local adaptive-fill-mode nil)
-  ;(setq-local indent-line-function #'sas-indent-line)
-  (setq-local comment-start "/*")
-  (setq-local comment-start-skip "/[*]")
-  (setq-local comment-end "*/")
-  (setq-local comment-end-skip "[*]/")
-  (setq-local comment-column 40)
-;  (setq-local tab-stop-list ess-sas-tab-stop-list)
-  (setq-local smie-indent-basic 4)
-(smie-setup smiex-sample-grammar #'smiex-sample-rules)
+   ;(setq-local indent-line-function #'sas-indent-line)
+ (setq-local sentence-end ";[\t\n */]*"
+              paragraph-start "^[ \t]*$"
+              paragraph-separate "^[ \t]*$"
+              paragraph-ignore-fill-prefix t
+              adaptive-fill-mode nil
+              comment-start "/*"
+              comment-start-skip "/[*]"
+              comment-end "*/"
+              comment-end-skip "[*]/"
+              comment-column 50
+              smie-indent-basic 4)
+  (set-syntax-table sas-mode-syntax-table)
+  (smie-setup sas-smie-sample-grammar #'sas-smie-sample-rules
+              :forward-token #'sas-forward-token
+              :backward-token #'sas-backward-token)
   (setq font-lock-defaults
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
-        '(sas-mode-font-lock-defaults nil t))
-  (set-syntax-table sas-mode-syntax-table))
+        '(sas-mode-font-lock-defaults nil t)))
 (add-hook 'sas-mode-hook 'sas--initialize)
 (add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
 
