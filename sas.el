@@ -1894,6 +1894,7 @@ sas-mode-font-lock-functions10))
     ('(:after "%mend") (smie-rule-parent))
     ('(:elem arg) 1)))
 
+;;;###autoload
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source. "
   :group 'sas-mode
@@ -1917,6 +1918,8 @@ sas-mode-font-lock-functions10))
         ;; KEYWORDS KEYWORDS-ONLY CASE-FOLD .....
         '(sas-mode-font-lock-defaults nil t)))
 (add-hook 'sas-mode-hook 'sas--initialize)
+
+;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
 
 (provide 'sas)
