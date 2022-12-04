@@ -1857,7 +1857,6 @@ sas-mode-font-lock-functions10))
        (t "data")))))
 
 (defun sas-forward-token ()
-  (forward-comment (point-max))
   (let ((tok (smie-default-forward-token)))
         (cond
          ((equal tok "data") (sas--data-token))
@@ -1865,14 +1864,7 @@ sas-mode-font-lock-functions10))
 
 (defun sas-backward-token ()
   (let ((tok (smie-default-backward-token)))
-    (forward-comment (- (point)))
     (cond
-     ;; ((and (equal tok "") (looking-at "\n"))
-     ;;  (let ((pos (point)))
-     ;;    (if (not (= 0 (mod (skip-chars-backward "\\\\") 2)))
-     ;;        (sas-backward-token)
-     ;;      (goto-char pos)
-     ;;      tok)))
      ((equal tok "data") (sas--data-token))
      (t tok))))
 
@@ -1908,7 +1900,10 @@ sas-mode-font-lock-functions10))
               comment-end "*/"
               comment-end-skip "[*]/"
               comment-column 50
-              smie-indent-basic 4)
+              smie-indent-basic 4
+              smie-blink-matching-inners nil
+              smie-blink-matching-triggers
+              (cons ?\; smie-blink-matching-triggers))
   (set-syntax-table sas-mode-syntax-table)
   (smie-setup sas-smie-sample-grammar #'sas-smie-sample-rules
               :forward-token #'sas-forward-token
