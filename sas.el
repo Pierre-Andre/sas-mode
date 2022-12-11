@@ -1269,7 +1269,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
  ("prtexp" . ("proc" "p0kqciwgisfnd8n1e2i5goiehp3i.htm"))
  ("tmodel" . ("etsug" "etsug_tmodel_syntax12.htm"))))
 
-(defun sas-doc-proc-dwim ()
+(defun sas-doc-dwim ()
   "return help for proc name or data step option or function at point."
   (interactive)
   (save-excursion
@@ -1290,6 +1290,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
          (url-prochelp (concat
                         "https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/"
                         (car helplist) "/" (car (cdr helplist)))))
+      (if sas-verbose (message "browse-url %s" url-help))
     (browse-url url-prochelp))))
 
 (defvar sas-mode-syntax-table
@@ -1900,7 +1901,6 @@ sas-mode-font-lock-functions10))
     ('(:after "%mend") (smie-rule-parent))
     ('(:elem arg) 1)))
 
-;;;###autoload
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source. "
   :group 'sas-mode
@@ -1928,7 +1928,7 @@ sas-mode-font-lock-functions10))
         '(sas-mode-font-lock-defaults nil t)))
 (add-hook 'sas-mode-hook 'sas--initialize)
 
-;;;###autoload
+;; autoload
 (add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
 
 (provide 'sas)
