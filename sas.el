@@ -543,8 +543,9 @@ t when called interactively."
   (if sas-realsession
   (let ((process (or process (sas-shell-get-process-or-error msg))))
       (comint-send-string process (sas-string-finish-with-ret string))
-      (when (not (string-match ".*\n[:blank:]*" string))
-        (comint-send-string process "\n;")))
+      (comint-send-string process "\n"))
+      ;; (when (not (string-match ".*\n[:blank:]*" string))
+      ;;   (comint-send-string process "\n")))
   (sas-send-string-with-shell-command string sas-buffer-user-library)))
 
 (defun sas-shell-send-region (start end &optional  msg)
@@ -786,7 +787,7 @@ to skip the first displacement to the end of statement."
     (if (re-search-forward "[ \t\n]+run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;" (point-max) t)
         (if (sas-syntax-context 'comment)
             (sas-end-of-sas-proc nil t)
-          (if plusone
+          (if (and plusone (< (point) (point-max)))
               (forward-char 1)))
       (goto-char (point-max)))))
 
@@ -1269,14 +1270,27 @@ If EDIT is not nil fsview in edit mode else browseonly "
  ("tmodel" . ("etsug" "etsug_tmodel_syntax12.htm"))))
 
 (defun sas-doc-proc-dwim ()
-  "return help for proc name at point."
+  "return help for proc name or data step option or function at point."
   (interactive)
-  (let* ((procname (sas--get-point-symbol))
-         (helplist (cdr (assoc procname sas-doc-proc-list)))
+  (save-excursion
+    (let* ((name-at-point (sas--get-point-symbol))
+           (tokendropped (unless (string= (string (char-before)) " ")
+                           (sas-backward-token)))
+           (tokenbefore (sas-backward-token))
+           (tokendropped (sas-forward-token))
+           (tokenunder (sas-forward-token))
+      (helplist (cond
+       ((string= tokenbefore "proc")
+          (cdr (assoc name-at-point sas-doc-proc-list)))
+        ((or (string= tokenunder "data")
+             (string= tokenunder "dataequal")
+             (string= tokenunder "set"))
+            (list "ledsoptsref" "p1pczmnhbq4axpn1l15s9mk6mobp.htm"))
+        (t (list "lefunctionsref" "p1q8bq2v0o11n6n1gpij335fqpph.htm"))))
          (url-prochelp (concat
                         "https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/"
                         (car helplist) "/" (car (cdr helplist)))))
-    (browse-url url-prochelp)))
+    (browse-url url-prochelp))))
 
 (defvar sas-mode-syntax-table
   (let ((tab (make-syntax-table)))
