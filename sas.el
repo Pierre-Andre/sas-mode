@@ -11,9 +11,9 @@
 ;; Created: april 28, 2021
 ;; Modified: 2022-03-29
 ;; Version: 0.6.0
-;; Keywords: Symbol’s value as variable is void: finder-known-keywords
+;; Keywords: languages
 ;; Homepage: https://github.com/
-;; Package-Requires: ((emacs "25.1"))
+;; Package-Requires: ((emacs "27.1"))
 ;;
 ;; This file is not part of GNU Emacs.
 ;;
@@ -27,7 +27,7 @@
 ;;;            cook@biostat.wisc.edu
 ;;;
 ;;;  Acknowledgements for ESS SAS-mode
-;;;  Menu code for XEmacs/Lucid emacs and startup mods
+;;;  Menu code for XEmacs/Lucid Emacs and startup mods
 ;;;  contributed by arossini@biostats.hmc.psu.edu
 ;;;
 ;;; Last change: 2/1/95
@@ -61,6 +61,11 @@
   :type 'string
   :group 'sas)
 
+(defcustom sas-graphics-directory "sasfigures"
+  "Default buffer name for Sas interpreter."
+  :type 'string
+  :group 'sas
+  :safe 'stringp)
 (defcustom sas-shell-buffer-name "Sas"
   "Default buffer name for Sas interpreter."
   :type 'string
@@ -75,28 +80,31 @@
   :type  'string)
 
 (defcustom sas-delay-kill-buffer 800
-  "Delay in millisecs between endsas; and killing windows"
+  "Delay in millisecs between endsas; and killing windows."
   :group 'sas
   :type  'integer)
 (defcustom sas-verbose nil
-  "If not nil message in minibuffer"
+  "If not nil message in minibuffer."
   :group 'sas
   :type  'boolean)
 
 (defcustom sas-user-library nil
-  "Name of SAS user library, if none no user library is created, if nil a temp dir is created, else an existing dir is used"
+  "Name of SAS user library.
+If none no user library is created, if nil a temp dir is created,
+else an existing dir is used."
   :group 'sas
   :type  'string)
 (defcustom sas-realsession t
-  "If nil a fake session is used, else a comint buffer is created"
+  "If nil a fake session is used, else a comint buffer is created."
   :group 'sas
   :type  'string)
 (defcustom sas-sas-windows nil
-  "If nil in a fake session windows shell syntax is used to execute sas program, else unix/linux syntax is used"
+  "If nil (in a fake session) windows shell syntax is used.
+If non-nil unix/linux syntax is used."
   :group 'sas
   :type  'string)
 (defcustom sas-view-maxnumber-of-rows 3
-  "Maximum number of rows displayed in `sas-view-table'"
+  "Maximum number of rows displayed in `sas-view-table'."
   :group 'sas
   :type  'integer)
 
@@ -170,7 +178,8 @@ series of processes in the same Comint buffer.  The hook
 
 (defun comint-exec-1-std (name buffer command stderr switches)
 "Same function as `comint-exec-1' but with STDERR argument.
-  STDERR is a buffer that will be used as standard error of process (see `make-process')"
+STDERR is a buffer that will be used as standard error
+of process \(see `make-process'\)"
   (let ((process-environment
          (nconc
           (comint-term-environment)
@@ -213,12 +222,13 @@ perhaps on a remote host that corresponds to `default-directory'.
 In the latter case, the local part of `default-directory', the one
 produced from it by `file-local-name', becomes the working directory
 of the process on the remote host.
-
+ ssIn
 PROGRAM and PROGRAM-ARGS might be file names.  They are not
 objects of file name handler invocation, so they need to be obtained
 by calling `file-local-name', in case they are remote file names.
 
-STDERR is a buffer which will be used as standard error of process (see `make-process')
+STDERR is a buffer which will be used as standard error of process
+\(see `make-process'\)
 
 File name handlers might not support pty association, if PROGRAM is nil."
   (let ((fh (find-file-name-handler default-directory 'start-file-process-std)))
@@ -236,12 +246,13 @@ handle the output.  BUFFER may also be nil, meaning that this
 process is not associated with any buffer.
 
 PROGRAM is the program file name.  It is searched for in `exec-path'
-\(which see).  If nil, just associate a pty with the buffer.  Remaining
+\(which see\).  If nil, just associate a pty with the buffer.  Remaining
 arguments PROGRAM-ARGS are either strings to give program as arguments or
 a plist (:stderr \"*buffer name of stderr*\" :switches (\"-l\" \"-a\"))
 
 STDERR is a buffer for separate standard error from standard output:
-if nil standard error is in BUFFER ; if it is a buffer this will receive standard error
+if nil standard error is in BUFFER ; if it is a buffer this will
+receive standard error
 
 The process runs in `default-directory' if that is local (as
 determined by `unhandled-file-name-directory'), or \"~\"
@@ -255,11 +266,10 @@ use `start-file-process'."
                      (if stderr
                          (list :command (cons program program-args)
                                :stderr stderr)
-                       (list :command (cons program program-args)))
-                   )))  )
+                       (list :command (cons program program-args)))))))
 
 (defun sas--clean-eol (string)
-  "Function to remove page-break."
+  "Function to remove page-break in STRING."
   (replace-regexp-in-string "\014" "\n" string))
 
 (defun run-sas (&optional cmd dedicated show)
@@ -365,8 +375,8 @@ If DEDICATED is t returns a string with the form
 Log`sas-shell-buffer-name'[`buffer-name'] else returns the value
 of `sas-shell-buffer-name'."
   (if dedicated
-      (format "Log-%s[%s]" sas-shell-buffer-name (buffer-name))
-   (format "Log-%s"  sas-shell-buffer-name)))
+      (format "*Log-%s[%s]*" sas-shell-buffer-name (buffer-name))
+   (format "*Log-%s*"  sas-shell-buffer-name)))
 
 (defun sas-shell-command-get-process-name (dedicated)
 "Calculate the appropriate process name for inferior Sas process.
@@ -374,7 +384,7 @@ If DEDICATED is t returns a string with the form
 `sas-shell-buffer-name_buffer-name' else returns the value
 of `sas-shell-buffer-name'."
   (if dedicated
-      (format "%s_%s" sas-shell-buffer-name (buffer-name))
+      (format "%s[%s]" sas-shell-buffer-name (buffer-name))
     sas-shell-buffer-name))
 (defun sas-shell-command-get-errorbuffer-name (dedicated)
 "Calculate the appropriate  name for error bufffer .
@@ -382,8 +392,8 @@ If DEDICATED is t returns a string with the form
 Log`sas-shell-buffer-name_buffer-name' else returns the value
 of `sas-shell-buffer-name'."
   (if dedicated
-      (format "Log-%s_%s" sas-shell-buffer-name (buffer-name))
-   (format "Log-%s"  sas-shell-buffer-name)))
+      (format "*Log-%s[%s]*" sas-shell-buffer-name (buffer-name))
+   (format "*Log-%s*"  sas-shell-buffer-name)))
 
 (defun sas-shell-make-comint (cmd proc-name &optional dedicated  show internal)
 "Create a Sas shell comint buffer.
@@ -435,7 +445,8 @@ killed."
 
 (defun sas-shell-calculate-process-environment ()
 "Calculate `process-environment' or `tramp-remote-process-environment'.
-  If `default-directory' points to a remote host, the returned value is intended for `tramp-remote-process-environment'."
+If `default-directory' points to a remote host, the returned value
+is intended for `tramp-remote-process-environment'."
   (let* ((remote-p (file-remote-p default-directory))
          (process-environment (if remote-p
                                   tramp-remote-process-environment
@@ -476,15 +487,16 @@ that they are prioritized when looking for executables."
   :group 'sas)
 
 (defun sas-make-fakesession  (&optional dedicated sas-user-library)
-  "Create results and log buffer and if needed create user library"
-;  (make-local-variable 'sas-file-progsas)
+  "Create results and log buffer and if needed create user library.
+DEDICATED indicates if a dedicated buffer should be used and
+SAS-USER-LIBRARY is a string which will be used as a user library for Sas."
   (make-local-variable 'sas-buffer-user-library)
   (setq sas-buffer-user-library
         (if sas-user-library
             (if (not (string= sas-user-library "none"))
                 (if (file-directory-p sas-user-library)
                     sas-user-library
-                  (user-error "directory %s does not exist"
+                  (user-error "Directory %s does not exist"
                               sas-user-library))
               sas-user-library)
           (make-temp-file "saslib" t)))
@@ -498,7 +510,7 @@ that they are prioritized when looking for executables."
 (defvar sas-prompt-regexp "^"
 "Prompt for `run-sas'.")
 (defun sas--initialize ()
-  "Helper function to initialize Sas"
+  "Helper function to initialize Sas."
   (setq comint-process-echoes t)
   (add-hook 'comint-preoutput-filter-functions 'sas--clean-eol 0 'make-it-local)
   (setq comint-use-prompt-regexp t))
@@ -534,7 +546,7 @@ that they are prioritized when looking for executables."
              s
            (concat s "\n")))))
 (defun sas-shell-send-string (string &optional process msg)
-"Send STRING to inferior Sas PROCESS or via shell-command.
+"Send STRING to inferior Sas PROCESS or via `shell-command'.
 When optional argument MSG is non-nil, forces display of a
 user-friendly message if there's no process running; defaults to
 t when called interactively."
@@ -548,15 +560,17 @@ t when called interactively."
       ;;   (comint-send-string process "\n")))
   (sas-send-string-with-shell-command string sas-buffer-user-library)))
 
-(defun sas-shell-send-region (start end &optional  msg)
+(defun sas-shell-send-region (start end &optional  msg prestring poststring)
 "Send the region delimited by START and END to inferior Sas process.
 When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
-process running; defaults to t when called interactively."
+process running; defaults to t when called interactively.
+PRESTRING is a string added to region before (used for graphics).
+POSTSTRING is a string added to region after (used for graphics)."
   (interactive
    (list (region-beginning) (region-end) t))
   (if sas-realsession
-  (let* ((string (buffer-substring-no-properties start end))
+  (let* ((string (concat prestring (buffer-substring-no-properties start end) poststring))
          (process (sas-shell-get-process-or-error msg))
          (_ (string-match "\\`\n*\\(.*\\)" string)))
     (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
@@ -566,13 +580,13 @@ process running; defaults to t when called interactively."
     ;;  (compilation-forget-errors))
     (sas-shell-send-string string process)
     (deactivate-mark))
-  (let ((string (buffer-substring-no-properties start end)))
+  (let ((string (concat prestring (buffer-substring-no-properties start end) poststring)))
      (when sas-verbose (message "Sent: %s..." (match-string 1 string)))
       (sas-send-string-with-shell-command string sas-buffer-user-library))))
 
 (defun sas-shell-send-line (&optional  msg)
 "Send the current line to the inferior SAS process.
- When optional argument MSG is
+When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
  (interactive (list t))
@@ -658,24 +672,29 @@ defaults to t when called interactively."
     (delete-file (sas-shell-command-get-process-name 't)))))
 
 (defun sas-shell-send-dwim ()
-"Send the region if selected if not try to send the block
-proc/run or data/run."
+  "Send the region or try to send the proc/run or data/run block."
   (interactive)
   (if (use-region-p)
       (sas-shell-send-region (region-beginning) (region-end) t)
-    (let (begpos endpos nameproc)
+    (let (begpos endpos nameproc prestring poststring)
       (save-excursion
         (setq nameproc (sas-beginning-of-sas-proc))
         (setq begpos (point))
         (when sas-verbose (message "begpos %s" begpos)))
       (if (and nameproc (string-equal (downcase nameproc) "iml"))
           (sas-shell-send-line t)
-          (progn
-            (save-excursion
-              (sas-end-of-sas-proc t nil)
-              (setq endpos (point))
-              (when sas-verbose (message "endpos %s" endpos)))
-            (sas-shell-send-region begpos endpos t))))))
+        (progn
+          (if (and nameproc (member (downcase nameproc) sas-mode-list-graphics-proc))
+              (progn
+                (unless (file-directory-p sas-graphics-directory)
+                  (make-directory sas-graphics-directory))
+                (setq prestring (concat "filename curdir \"" sas-graphics-directory "\" ; goptions device=svg gsfname=curdir ; ods listing gpath=curdir; ods graphics on / imagefmt=svg ; \n"))
+                (setq poststring "quit; ods graphics off;\n")))
+          (save-excursion
+            (sas-end-of-sas-proc t nil)
+            (setq endpos (point))
+            (when sas-verbose (message "endpos %s" endpos)))
+          (sas-shell-send-region begpos endpos t prestring poststring))))))
 
 (defun sas-shell-get-process-or-error (&optional interactivep)
 "Return inferior Sas process for current buffer or signal error.
@@ -690,8 +709,7 @@ of `error' with a user-friendly message."
           ;;  (key-description
           ;;   (where-is-internal
           ;;    #'run-sas overriding-local-map t)))
-        (error
-         "No inferior Sas process running."))))
+        (error "No inferior Sas process running"))))
 (defun sas-shell-get-process ()
  "Return inferior Sas process for current buffer."
   (get-buffer-process (sas-shell-get-buffer)))
@@ -757,21 +775,23 @@ character address of the specified TYPE."
     (goto-char (point-max))))
 
 (defun sas-beginning-of-sas-proc (&optional redo)
-"Move point to the beginning of sas proc, macro or data step.
+  "Move point to the beginning of sas proc, macro or data step.
 Optional argument REDO (when non-nil) allows
 to skip the first displacement to the end of statement."
   (interactive)
   (if (not redo)
       (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
-(if (re-search-backward "[ \t\n]+proc[ \t\n]\\|[ \t\n]+data[ \t\n]+\\|[ \t\n]+%macro[ \t\n]*" (point-min) t)
-    (if (sas-syntax-context 'comment)
-        (sas-beginning-of-sas-proc t))
-  (goto-char (point-min)))
-(if (looking-at "[ \t\n]+proc[ \t\n]+\\([A-Za-z]+\\)")
-        (setq nameproc (match-string 1)))
-      (skip-chars-forward sas-white-chars)
-    (concat nameproc "")))
+    (if (re-search-backward "[ \t\n]+proc[ \t\n]\\|[ \t\n]+data[ \t\n]+\\|[ \t\n]+%macro[ \t\n]*" (point-min) t)
+        (if (or (sas-syntax-context 'comment)
+                (looking-at "[ \t\n]+data[ \t\n]+="))
+            (sas-beginning-of-sas-proc t)
+          (progn
+            (if (looking-at "[ \t\n]+proc[ \t\n]+\\([A-Za-z]+\\)")
+                (setq nameproc (match-string 1)))
+            (skip-chars-forward sas-white-chars)
+            (concat nameproc "")))
+      (goto-char (point-min)))))
 
 (defun sas-end-of-sas-proc (&optional plusone redo)
 "Move point to end of sas proc, macro or data step.
@@ -804,13 +824,16 @@ The optional argument ARG is a number that indicates the
     (if (re-search-forward
          "^[ \t]*\\(data[ ;]\\|proc[ ;]\\|endsas[ ;]\\|g?options[ ;]\\|%macro[ ;]\\)"
          nil t arg)
-      (if (sas-syntax-context 'comment)  (sas-next-sas-proc))
+      (if (or (sas-syntax-context 'comment)
+              (looking-at "[ \t\n]+data[ \t\n]+=")) (sas-next-sas-proc arg))
         (sas-beginning-of-sas-statement 1)
       (forward-char -1))))
 
 (defun sas-external-shell-command (session file-progsas file-result file-log)
-  "return string: the sas command to be run.
-   IF SESSION is not 'none' a personnal sas library is used"
+  "Return string: the sas command to be run.
+IF SESSION is not 'none' a personnal sas library is used.
+FILE-PROGSAS FILE-RESULT FILE-LOG are files used to submit Sas commands,
+get results and log."
     (if sas-sas-windows
         (if (string= session "none")
             (format "%s -SYSIN %s %s -PRINT %s -LOG %s"
@@ -841,6 +864,8 @@ The optional argument ARG is a number that indicates the
                     file-result
                     file-progsas))))
 (defun sas-send-string-with-shell-command (string session)
+  "Send STRING to Sas using shell.
+SESSION is the library used by Sas."
   (let* ((name-buffer-sas (buffer-name (current-buffer)))
         (file-progsas (make-temp-file "SAS"))
         (buffer-progsas  (find-file-noselect file-progsas))
@@ -868,7 +893,7 @@ The optional argument ARG is a number that indicates the
         (switch-to-buffer name-buffer-sas))))
 
 (defun sas-shell-dedicated ()
-  "is it a dedicated process or not"
+  "Is it a dedicated process or not."
   (let* ((global-proc-name  (sas-shell-get-process-name nil))
            (global-proc-buffer-name (format "*%s*" global-proc-name))
            (current-proc-buffer-name (sas-shell-get-buffer)))
@@ -876,7 +901,7 @@ The optional argument ARG is a number that indicates the
         nil t)))
 
 (defun sas-clear-log-buffer ()
-    "send comint-clear-buffer to log file."
+    "Send `comint-clear-buffer' to log file."
   (interactive)
   (if sas-realsession
   (let ((file-log (sas-shell-command-get-errorbuffer-name (sas-shell-dedicated))))
@@ -884,7 +909,7 @@ The optional argument ARG is a number that indicates the
       (comint-clear-buffer)))))
 
 (defun sas-clear-output-buffer ()
-    "send comint-clear-buffer to log file."
+    "Send `comint-clear-buffer' to output file."
   (interactive)
     (with-current-buffer (format "*%s*" (sas-shell-get-process-name nil))
       (comint-clear-buffer)))
@@ -893,13 +918,11 @@ The optional argument ARG is a number that indicates the
   "Get symbol at point."
   (if (region-active-p)
       (buffer-substring-no-properties (region-beginning) (region-end))
-    (if (version< emacs-version "24.4")
-        (thing-at-point 'symbol)
-      (thing-at-point 'symbol t))))
+      (thing-at-point 'symbol t)))
 
 (defun sas-fsview-table  (&optional table edit)
   "Open a proc fsview on TABLE or region or point.
-If EDIT is not nil fsview in edit mode else browseonly "
+If EDIT is not nil fsview in edit mode else browseonly."
    (interactive
    (list (if current-prefix-arg
         (read-from-minibuffer
@@ -929,7 +952,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
     (sas-fsview-table lookfor-table 't)))
 
 (defun sas-view-table  (&optional table)
-  "launch a proc print on TABLE or region or point."
+  "Launch a proc print on TABLE or region or point."
    (interactive
    (list (if current-prefix-arg
         (read-from-minibuffer
@@ -1270,14 +1293,14 @@ If EDIT is not nil fsview in edit mode else browseonly "
  ("tmodel" . ("etsug" "etsug_tmodel_syntax12.htm"))))
 
 (defun sas-doc-dwim ()
-  "return help for proc name or data step option or function at point."
+  "Return help for proc name or data step option or function at point."
   (interactive)
   (save-excursion
     (let* ((name-at-point (sas--get-point-symbol))
-           (tokendropped (unless (string= (string (char-before)) " ")
+           (_ (unless (string= (string (char-before)) " ")
                            (sas-backward-token)))
            (tokenbefore (sas-backward-token))
-           (tokendropped (sas-forward-token))
+           (_ (sas-forward-token))
            (tokenunder (sas-forward-token))
       (helplist (cond
        ((string= tokenbefore "proc")
@@ -1290,7 +1313,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
          (url-prochelp (concat
                         "https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/"
                         (car helplist) "/" (car (cdr helplist)))))
-      (if sas-verbose (message "browse-url %s" url-help))
+      (if sas-verbose (message "browse-url %s" url-prochelp))
     (browse-url url-prochelp))))
 
 (defvar sas-mode-syntax-table
@@ -1359,8 +1382,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
              font-lock-comment-face)
        (cons "^Local Variables:$"                  font-lock-comment-face)
        (cons "^End:$"                              font-lock-comment-face)
-       (cons "^MPRINT([_A-Z0-9]+)"                 font-lock-comment-face)
-       ))
+       (cons "^MPRINT([_A-Z0-9]+)"                 font-lock-comment-face)))
 
 (defvar sas-inferior-mode-font-lock-errors02
   (list
@@ -1421,31 +1443,27 @@ If EDIT is not nil fsview in edit mode else browseonly "
        (cons "\\<not("      font-lock-function-name-face)
        (cons "\\<or("       font-lock-function-name-face)
        (cons "\\<put("      font-lock-function-name-face)
-       (cons "\\<sum("      font-lock-function-name-face)
+       (cons "\\<sum("      font-lock-function-name-face)))
 
                                         ; other idiosyncratic keywords
                                         ;(cons "key="      font-lock-keyword-face)
                                         ;(cons "/unique"   font-lock-keyword-face)
-))
 
 (defvar sas-mode-font-lock-execblocks05
   (list
   ;; SAS execution blocks: DATA, %MACRO/%MEND, %DO/%END, etc.
-       (cons (regexp-opt '(
-                           "data" "start" "return" ;"proc"
+       (cons (regexp-opt '("data" "start" "return" ;"proc"
                            "%macro" "%mend"
                            "%do" "%to" "%by" "%end"
                            "%goto" "%go to"
                            "%if" "%then" "%else"
-                           "%global" "%inc" "%include" "%input" "%local" "%let" "%put" "%sysexec"
-                           ) 'words) font-lock-constant-face)
+                           "%global" "%inc" "%include" "%input" "%local" "%let" "%put" "%sysexec")
+                         'words) font-lock-constant-face)
  ;; SAS execution blocks that must be followed by a semi-colon
        (cons (concat "\\<"
                      (regexp-opt
-                      '(
-                        "run;" "quit;" "endsas;" "finish;"
-                        "cards;" "cards4;" "datalines;" "datalines4;" "lines;" "lines4;"
-                        )))
+                      '("run;" "quit;" "endsas;" "finish;"
+                        "cards;" "cards4;" "datalines;" "datalines4;" "lines;" "lines4;")))
              font-lock-constant-face)))
 
 (defvar sas-mode-font-lock-statements06
@@ -1453,20 +1471,20 @@ If EDIT is not nil fsview in edit mode else browseonly "
        ;; SAS statements that must be followed by a semi-colon
        (cons (concat "\\<"
                      (regexp-opt
-                      '(
-                        "end;" "list;" "lostcard;" "page;" "stop;" ;"return;"
-                        )))
+                      '("end;" "list;" "lostcard;" "page;" "stop;")))
              font-lock-keyword-face)
 
        ;; SAS statements that must be followed by an equal sign
        (cons (concat "\\<"
                      (regexp-opt
-                      '(
-                        "compress=" "in=" "out=" "sortedby="
-                        )))
-             font-lock-keyword-face)
-   ))
+                      '("compress=" "in=" "out=" "sortedby=")))
+             font-lock-keyword-face)))
 
+(defvar sas-mode-list-graphics-proc
+  '("gplot" "gchart" "sgscatter" "gareabar" "gbarline"
+"gchart" "gcontour" "gmap" "sgdesign" "sgmap" "sgpanel"
+"sgplot" "sgrender" "boxplot" "cluster" "princomp"
+"reg" "univariate" ))
 (defvar sas-mode-font-lock-procname07
   (list
     ;; SAS procedure names
@@ -1535,16 +1553,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
 "tsinfo" "tsmodel" "tsreconcil" "ttest" "ucm"
 "univariate" "upload" "varclus" "varcomp" "varimpute"
 "variogram" "varmax" "varreduc" "x11" "x12"
-"x13" "xsl"
-                                   ) 'words)) font-lock-constant-face)
-
-                                        ;       (cons (concat
-                                        ;             "\\<"
-                                        ;             "do[ \t]*" (regexp-opt '("over" "until" "while") t) "?"
-                                        ;             "\\>")
-                                        ;            font-lock-keyword-face)
-                                        ;
-   ))
+"x13" "xsl") 'words)) font-lock-constant-face)))
 
 (defvar sas-mode-font-lock-basegraphstatements08
   (list
@@ -1577,9 +1586,7 @@ If EDIT is not nil fsview in edit mode else browseonly "
                  "title6" "title7" "title8" "title9" "title10"
                  "univar" "update"
                  "value" "var" "vbar" "vbar3d"
-                 "weight" "where" "window" "with"
-                                        ; "x"
-                 ) 'words)) ;"\\>")
+                 "weight" "where" "window" "with") 'words)) ;"\\>")
              font-lock-keyword-face)
 
        ;; SAS/GRAPH statements not handled above
@@ -1587,15 +1594,12 @@ If EDIT is not nil fsview in edit mode else browseonly "
                      (regexp-opt
                       '("axis" "legend" "pattern" "symbol")) "\\([1-9][0-9]?\\)?"
                       "\\>")
-             font-lock-keyword-face)
-   ))
+             font-lock-keyword-face)))
 
 (defvar sas-mode-font-lock-macrosfunctions09
   (list
        ;; SAS functions and SAS macro functions
-       (cons "%[a-z_][a-z_0-9]*[(;]"                  font-lock-function-name-face)
-                                        ;(cons "\\<call[ \t]+[a-z]+("                   font-lock-function-name-face)
-   ))
+       (cons "%[a-z_][a-z_0-9]*[(;]"                  font-lock-function-name-face)))
 
 (defvar sas-mode-font-lock-functions10
   (list
@@ -1772,11 +1776,9 @@ If EDIT is not nil fsview in edit mode else browseonly "
 "vvaluex" "week" "weekday" "whichc" "whichn"
 "xmult" "xsect" "year" "yield" "yieldp"
 "yrdif" "yyq" "zipcity" "zipcitydistance" "zipfips"
-"zipname" "zipnamel" "zipstate"
-                 ) 'words) ;"\\>"
+"zipname" "zipnamel" "zipstate") 'words) ;"\\>"
               "("); "[ \t]*(")
-             font-lock-function-name-face)
-   ))
+             font-lock-function-name-face)))
 
 (defvar sas-inferior-mode-font-lock-defaults
   (append sas-inferior-mode-font-lock-comment01
@@ -1855,11 +1857,11 @@ sas-mode-font-lock-functions10))
            (assoc "><" "MIN")
            (assoc "<>" "MAX")
            (nonassoc "~" "^" "NOT")    ;And unary "+" and "-".
-           (right "**")))
-       )))
+           (right "**"))))))
 
 (defun sas--data-token ()
-  "choose beetween data ... run and data= ."
+  "Get token.
+Mainly it chooses beetween `data ... run' and `data= .'."
   (save-excursion
     (let ((tok2 (smie-default-forward-token)))
       (cond
@@ -1872,12 +1874,14 @@ sas-mode-font-lock-functions10))
        (t "data")))))
 
 (defun sas-forward-token ()
+  "Forward token for `smie'."
   (let ((tok (smie-default-forward-token)))
         (cond
          ((equal tok "data") (sas--data-token))
          (t tok))))
 
 (defun sas-backward-token ()
+  "Backward token for  `smie'."
   (let ((tok (smie-default-backward-token)))
     (cond
      ((equal tok "data") (sas--data-token))
@@ -1902,7 +1906,7 @@ sas-mode-font-lock-functions10))
     ('(:elem arg) 1)))
 
 (define-derived-mode sas-mode prog-mode "sas"
-  "Major mode for editing SAS source. "
+  "Major mode for editing SAS source."
   :group 'sas-mode
    ;(setq-local indent-line-function #'sas-indent-line)
  (setq-local sentence-end ";[\t\n */]*"
