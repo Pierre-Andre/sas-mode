@@ -9,8 +9,8 @@
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
-;; Modified: 2022-03-29
-;; Version: 0.6.0
+;; Modified: 2023-02-27
+;; Version: 0.7.0
 ;; Keywords: languages
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "27.1"))
@@ -108,7 +108,27 @@ If non-nil unix/linux syntax is used."
   :group 'sas
   :type  'integer)
 
-(defun make-comint-in-buffer-std (name buffer program &optional startcommand stderr &rest switches)
+(defcustom sas-shell-remote-exec-path nil
+"List of paths to be ensured remotely for searching executables.
+When this variable is non-nil, values are exported into remote
+hosts PATH before starting processes.  Values defined in
+`sas-shell-exec-path' will take precedence to paths defined
+here.  Normally you wont use this variable directly unless you
+plan to ensure a particular set of paths to all Sas shell
+executed through tramp connections."
+  :version "25.1"
+  :type '(repeat string)
+  :group 'sas)
+(defcustom sas-shell-exec-path nil
+"List of paths for searching executables.
+When this variable is non-nil, values added at the beginning of
+the PATH before starting processes.  Any values present here that
+already exists in PATH are moved to the beginning of the list so
+that they are prioritized when looking for executables."
+  :type '(repeat string)
+  :group 'sas)
+
+(defun sas--make-comint-in-buffer-std (name buffer program &optional startcommand stderr &rest switches)
 "Make a Comint process NAME in BUFFER, running PROGRAM.
 If BUFFER is nil, it defaults to NAME surrounded by `*'s.
 If there is a running process in BUFFER, it is not restarted.
@@ -137,10 +157,10 @@ Return the (possibly newly created) process buffer."
     (with-current-buffer buffer
       (unless (derived-mode-p 'comint-mode)
         (comint-mode))) ; Install local vars, mode, keymap, ...
-    (comint-exec-std buffer name program startcommand stderr switches))
+    (sas--comint-exec-std buffer name program startcommand stderr switches))
   buffer)
 
-(defun comint-exec-std (buffer name command startcommand stderr switches)
+(defun sas--comint-exec-std (buffer name command startcommand stderr switches)
 "Start up a process named NAME in buffer BUFFER for Comint modes.
 Run the given COMMAND with SWITCHES, initial input
 from STARTCOMMAND and standard error from STDERR.
@@ -163,7 +183,7 @@ series of processes in the same Comint buffer.  The hook
     (let ((proc
            (if (consp command)
                (open-network-stream name buffer (car command) (cdr command))
-             (comint-exec-1-std name buffer command stderr switches))))
+             (sas--comint-exec-1-std name buffer command stderr switches))))
       (set-process-filter proc 'comint-output-filter)
       (setq-local comint-ptyp process-connection-type) ; t if pty, nil if pipe.
       ;; Jump to the end, and set the process mark.
@@ -176,10 +196,12 @@ series of processes in the same Comint buffer.  The hook
       (run-hooks 'comint-exec-hook)
       buffer)))
 
-(defun comint-exec-1-std (name buffer command stderr switches)
+(defun sas--comint-exec-1-std (name buffer command stderr switches)
 "Same function as `comint-exec-1' but with STDERR argument.
 STDERR is a buffer that will be used as standard error
-of process \(see `make-process'\)"
+of process \(see `make-process'\). Start up a process named NAME
+in buffer BUFFER for Comint modes. Run the given COMMAND with
+SWITCHES and standard error in STDERR."
   (let ((process-environment
          (nconc
           (comint-term-environment)
@@ -194,7 +216,7 @@ of process \(see `make-process'\)"
                          ;; If the command has slashes, make sure we
                          ;; first look relative to the current directory.
                          (cons default-directory exec-path) exec-path)))
-      (setq proc (apply 'start-file-process-std name buffer command stderr switches)))
+      (setq proc (apply 'sas--start-file-process-std name buffer command stderr switches)))
     ;; Some file name handler cannot start a process, fe ange-ftp.
     (unless (processp proc) (error "No process started"))
     (let ((coding-systems (process-coding-system proc)))
@@ -211,18 +233,18 @@ of process \(see `make-process'\)"
         (set-process-coding-system proc decoding encoding))
     proc))
 
-(defun start-file-process-std (name buffer program stderr &rest program-args)
+(defun sas--start-file-process-std (name buffer program stderr &rest program-args)
 "Start a program in a subprocess.  Return the process object for it.
 
-Similar to `start-process', but may invoke a file name handler based on
-`default-directory'.  See Info node `(elisp)Magic File Names'.
+ Start up a process named NAME in buffer BUFFER for Comint modes.
+Similar to `start-process', but may invoke a file name handler
+based on `default-directory'.  See Info node `(elisp)Magic File Names'.
 
 This handler ought to run PROGRAM, perhaps on the local host,
 perhaps on a remote host that corresponds to `default-directory'.
 In the latter case, the local part of `default-directory', the one
 produced from it by `file-local-name', becomes the working directory
-of the process on the remote host.
- ssIn
+of the process on the remote host. In
 PROGRAM and PROGRAM-ARGS might be file names.  They are not
 objects of file name handler invocation, so they need to be obtained
 by calling `file-local-name', in case they are remote file names.
@@ -231,11 +253,11 @@ STDERR is a buffer which will be used as standard error of process
 \(see `make-process'\)
 
 File name handlers might not support pty association, if PROGRAM is nil."
-  (let ((fh (find-file-name-handler default-directory 'start-file-process-std)))
-    (if fh (apply fh 'start-file-process-std name buffer program stderr program-args)
-      (apply 'start-process-std name buffer program stderr program-args))))
+  (let ((fh (find-file-name-handler default-directory 'sas--start-file-process-std)))
+    (if fh (apply fh 'sas--start-file-process-std name buffer program stderr program-args)
+      (apply 'sas--start-process-std name buffer program stderr program-args))))
 
-(defun start-process-std (name buffer program stderr &rest program-args)
+(defun sas--start-process-std (name buffer program stderr &rest program-args)
 "Start a program in a subprocess.  Return the process object for it.
 NAME is name for process.  It is modified if necessary to make it unique.
 BUFFER is the buffer (or buffer name) to associate with the process.
@@ -245,7 +267,7 @@ goes at end of BUFFER, unless you specify a filter function to
 handle the output.  BUFFER may also be nil, meaning that this
 process is not associated with any buffer.
 
-PROGRAM is the program file name.  It is searched for in `exec-path'
+PROGRAM is the program file name.  It is searched for in variable `exec-path'
 \(which see\).  If nil, just associate a pty with the buffer.  Remaining
 arguments PROGRAM-ARGS are either strings to give program as arguments or
 a plist (:stderr \"*buffer name of stderr*\" :switches (\"-l\" \"-a\"))
@@ -315,7 +337,8 @@ process buffer for a list of commands.)"
 
 (defmacro sas-shell-with-environment (&rest body)
 "Modify shell environment during execution of BODY.
-Temporarily sets `process-environment' and `exec-path' during
+Temporarily sets variable `process-environment' and
+variable `exec-path' during
 execution of body.  If `default-directory' points to a remote
 machine then modifies `tramp-remote-process-environment' and
 `sas-shell-remote-exec-path' instead."
@@ -395,6 +418,45 @@ of `sas-shell-buffer-name'."
       (format "*Log-%s[%s]*" sas-shell-buffer-name (buffer-name))
    (format "*Log-%s*"  sas-shell-buffer-name)))
 
+(defun sas-shell-tramp-refresh-remote-path (vec paths)
+  "Update VEC's remote-path giving PATHS priority."
+  (let ((remote-path (tramp-get-connection-property vec "remote-path" nil)))
+    (when remote-path
+      (sas-shell--add-to-path-with-priority remote-path paths)
+      (tramp-set-connection-property vec "remote-path" remote-path)
+      (tramp-set-remote-path vec))))
+
+(defun sas-shell-tramp-refresh-process-environment (vec env)
+  "Update VEC's process environment with ENV."
+  ;; Stolen from `tramp-open-connection-setup-interactive-shell'.
+  (let ((env (append (when (fboundp 'tramp-get-remote-locale)
+                       ;; Emacs<24.4 compat.
+                       (list (tramp-get-remote-locale vec)))
+		     (copy-sequence env)))
+        (tramp-end-of-heredoc
+         (if (boundp 'tramp-end-of-heredoc)
+             tramp-end-of-heredoc
+           (md5 tramp-end-of-output)))
+	unset vars item)
+    (while env
+      (setq item (split-string (car env) "=" 'omit))
+      (setcdr item (mapconcat 'identity (cdr item) "="))
+      (if (and (stringp (cdr item)) (not (string-equal (cdr item) "")))
+	  (push (format "%s %s" (car item) (cdr item)) vars)
+	(push (car item) unset))
+      (setq env (cdr env)))
+    (when vars
+      (tramp-send-command
+       vec
+       (format "while read var val; do export $var=$val; done <<'%s'\n%s\n%s"
+	       tramp-end-of-heredoc
+	       (mapconcat 'identity vars "\n")
+	       tramp-end-of-heredoc)
+       t))
+    (when unset
+      (tramp-send-command
+       vec (format "unset %s" (mapconcat 'identity unset " ")) t))))
+
 (defun sas-shell-make-comint (cmd proc-name &optional dedicated  show internal)
 "Create a Sas shell comint buffer.
 CMD is the Sas command to be executed and PROC-NAME is the
@@ -419,21 +481,21 @@ killed."
                 (bufstderr (if sas-log-separated
                              (get-buffer-create (sas-shell-get-errorbuffer-name dedicated))))
                 (buffer (if sas-log-separated
-                            (apply #'make-comint-in-buffer-std
+                            (apply #'sas--make-comint-in-buffer-std
                                    proc-name proc-buffer-name
                                    interpreter nil bufstderr args)
                           (apply #'make-comint-in-buffer
                                    proc-name proc-buffer-name
                                    interpreter nil args)))
-                (sas-shell--parent-buffer (current-buffer))
+                ;; (sas-shell--parent-buffer (current-buffer))
                 (process (get-buffer-process buffer))
                 ;; Users can override the interpreter and args
                 ;; interactively when calling `run-sas', let-binding
                 ;; these allows having the new right values in all
                 ;; setup code that is done in `inferior-sas-mode',
                 ;; which is important, especially for prompt detection.
-                (sas-shell--interpreter interpreter)
-                (sas-shell--interpreter-args
+                (sas-shell-interpreter interpreter)
+                (sas-shell-interpreter-args
                  (mapconcat #'identity args " ")))
            (if sas-log-separated (with-current-buffer bufstderr
              (inferior-sas-mode)))
@@ -443,6 +505,9 @@ killed."
            (and internal (set-process-query-on-exit-flag process nil))))
        proc-buffer-name))))
 
+(defvar sas-buffer-user-library nil
+"SAS-USER-LIBRARY is a string which will be used as a user library for Sas.
+Used only when variable SAS-REALSESSION is nil.")
 (defun sas-shell-calculate-process-environment ()
 "Calculate `process-environment' or `tramp-remote-process-environment'.
 If `default-directory' points to a remote host, the returned value
@@ -454,10 +519,10 @@ is intended for `tramp-remote-process-environment'."
     process-environment))
 
 (defun sas-shell-calculate-exec-path ()
-"Calculate `exec-path'.
+"Calculate variable `exec-path'.
 Prepends `sas-shell-exec-path'.  If `default-directory' points
 to a remote host, the returned value appends
-`sas-shell-remote-exec-path' instead of `exec-path'."
+`sas-shell-remote-exec-path' instead of variable `exec-path'."
   (let ((new-path (copy-sequence
                    (if (file-remote-p default-directory)
                        sas-shell-remote-exec-path
@@ -466,39 +531,19 @@ to a remote host, the returned value appends
      new-path sas-shell-exec-path)
     new-path))
 
-(defcustom sas-shell-remote-exec-path nil
-"List of paths to be ensured remotely for searching executables.
-When this variable is non-nil, values are exported into remote
-hosts PATH before starting processes.  Values defined in
-`sas-shell-exec-path' will take precedence to paths defined
-here.  Normally you wont use this variable directly unless you
-plan to ensure a particular set of paths to all Sas shell
-executed through tramp connections."
-  :version "25.1"
-  :type '(repeat string)
-  :group 'sas)
-(defcustom sas-shell-exec-path nil
-"List of paths for searching executables.
-When this variable is non-nil, values added at the beginning of
-the PATH before starting processes.  Any values present here that
-already exists in PATH are moved to the beginning of the list so
-that they are prioritized when looking for executables."
-  :type '(repeat string)
-  :group 'sas)
-
-(defun sas-make-fakesession  (&optional dedicated sas-user-library)
+(defun sas-make-fakesession  (&optional dedicated sas-user-library-loc)
   "Create results and log buffer and if needed create user library.
 DEDICATED indicates if a dedicated buffer should be used and
-SAS-USER-LIBRARY is a string which will be used as a user library for Sas."
+SAS-USER-LIBRARY-LOC is a string which will be used as a user library for Sas."
   (make-local-variable 'sas-buffer-user-library)
   (setq sas-buffer-user-library
-        (if sas-user-library
-            (if (not (string= sas-user-library "none"))
-                (if (file-directory-p sas-user-library)
-                    sas-user-library
+        (if sas-user-library-loc
+            (if (not (string= sas-user-library-loc "none"))
+                (if (file-directory-p sas-user-library-loc)
+                    sas-user-library-loc
                   (user-error "Directory %s does not exist"
-                              sas-user-library))
-              sas-user-library)
+                              sas-user-library-loc))
+              (make-temp-file "saslib" t))
           (make-temp-file "saslib" t)))
   (let ((buffer-sas (current-buffer)))
     ;(setq sas-file-progsas (buffer-name (create-file-buffer ".sas_temp_progsas.sas")))
@@ -507,6 +552,11 @@ SAS-USER-LIBRARY is a string which will be used as a user library for Sas."
     (if (not (string= (buffer-name) (buffer-name buffer-sas)))
         (switch-to-buffer buffer-sas))))
 
+(defvar sas-inferior-mode-syntax-table
+  (let ((tab (copy-syntax-table comint-mode-syntax-table)))
+    (modify-syntax-entry ?\' ".")
+    tab)
+  "Syntax table for `sas-inferior-mode'.")
 (defvar sas-prompt-regexp "^"
 "Prompt for `run-sas'.")
 (defun sas--initialize ()
@@ -517,8 +567,7 @@ SAS-USER-LIBRARY is a string which will be used as a user library for Sas."
 
 (define-derived-mode inferior-sas-mode comint-mode "Inferior sas"
  "Major mode for sas inferior process`run-sas'."
- :syntax-table nil
-    (modify-syntax-entry ?\' ".")
+ :syntax-table sas-inferior-mode-syntax-table
   ;; this sets up the prompt so it matches things like: [foo@bar]
   (setq comint-prompt-regexp sas-prompt-regexp)
   (setq font-lock-defaults
@@ -664,10 +713,8 @@ defaults to t when called interactively."
         (kill-buffer name-buffer-saslog))
     (kill-buffer name-buffer-sas))
   (progn
-    (kill-buffer sas-file-progsas)
     (kill-buffer (sas-shell-command-get-errorbuffer-name 't))
     (kill-buffer  (sas-shell-command-get-process-name 't))
-    (delete-file sas-file-progsas)
     (delete-file (sas-shell-command-get-errorbuffer-name 't))
     (delete-file (sas-shell-command-get-process-name 't)))))
 
@@ -826,7 +873,7 @@ The optional argument ARG is a number that indicates the
          nil t arg)
       (if (or (sas-syntax-context 'comment)
               (looking-at "[ \t\n]+data[ \t\n]+=")) (sas-next-sas-proc arg))
-        (sas-beginning-of-sas-statement 1)
+        (sas-beginning-of-sas-statement)
       (forward-char -1))))
 
 (defun sas-external-shell-command (session file-progsas file-result file-log)
@@ -1908,6 +1955,7 @@ Mainly it chooses beetween `data ... run' and `data= .'."
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source."
   :group 'sas-mode
+  :syntax-table sas-mode-syntax-table
    ;(setq-local indent-line-function #'sas-indent-line)
  (setq-local sentence-end ";[\t\n */]*"
               paragraph-start "^[ \t]*$"
