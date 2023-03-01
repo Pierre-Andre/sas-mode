@@ -552,11 +552,6 @@ SAS-USER-LIBRARY-LOC is a string which will be used as a user library for Sas."
     (if (not (string= (buffer-name) (buffer-name buffer-sas)))
         (switch-to-buffer buffer-sas))))
 
-(defvar sas-inferior-mode-syntax-table
-  (let ((tab (copy-syntax-table comint-mode-syntax-table)))
-    (modify-syntax-entry ?\' ".")
-    tab)
-  "Syntax table for `sas-inferior-mode'.")
 (defvar sas-prompt-regexp "^"
 "Prompt for `run-sas'.")
 (defun sas--initialize ()
@@ -567,7 +562,7 @@ SAS-USER-LIBRARY-LOC is a string which will be used as a user library for Sas."
 
 (define-derived-mode inferior-sas-mode comint-mode "Inferior sas"
  "Major mode for sas inferior process`run-sas'."
- :syntax-table sas-inferior-mode-syntax-table
+    (modify-syntax-entry ?\' ".")
   ;; this sets up the prompt so it matches things like: [foo@bar]
   (setq comint-prompt-regexp sas-prompt-regexp)
   (setq font-lock-defaults
@@ -1363,28 +1358,6 @@ If EDIT is not nil fsview in edit mode else browseonly."
       (if sas-verbose (message "browse-url %s" url-prochelp))
     (browse-url url-prochelp))))
 
-(defvar sas-mode-syntax-table
-  (let ((tab (make-syntax-table)))
-    (modify-syntax-entry ?*  ". 23" ) ; comment character
-    (modify-syntax-entry ?/  ". 14" ) ; comment character
-    (modify-syntax-entry ?\; "." )
-    (modify-syntax-entry ?%  "w" )
-    (modify-syntax-entry ?&  "w" )
-    (modify-syntax-entry ?_  "w" )
-    (modify-syntax-entry ?.  "w" )
-    (modify-syntax-entry ?\\ "." )  ;; backslash is punctuation
-    (modify-syntax-entry ?+  "." )
-    (modify-syntax-entry ?-  "." )
-    (modify-syntax-entry ?=  "." )
-    (modify-syntax-entry ?<  "." )
-    (modify-syntax-entry ?>  "." )
-    (modify-syntax-entry ?|  "." )
-    (modify-syntax-entry ?\' "\"")
-    (modify-syntax-entry ?<  "." )
-    (modify-syntax-entry ?>  "." )
-    tab)
-  "Syntax table for `sas-mode'.")
-
 (defvar sas-inferior-mode-font-lock-comment01
   (list
   ;; .log NOTE: messages
@@ -1955,7 +1928,23 @@ Mainly it chooses beetween `data ... run' and `data= .'."
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source."
   :group 'sas-mode
-  :syntax-table sas-mode-syntax-table
+    (modify-syntax-entry ?*  ". 23" ) ; comment character
+    (modify-syntax-entry ?/  ". 14" ) ; comment character
+    (modify-syntax-entry ?\; "." )
+    (modify-syntax-entry ?%  "w" )
+    (modify-syntax-entry ?&  "w" )
+    (modify-syntax-entry ?_  "w" )
+    (modify-syntax-entry ?.  "w" )
+    (modify-syntax-entry ?\\ "." )  ;; backslash is punctuation
+    (modify-syntax-entry ?+  "." )
+    (modify-syntax-entry ?-  "." )
+    (modify-syntax-entry ?=  "." )
+    (modify-syntax-entry ?<  "." )
+    (modify-syntax-entry ?>  "." )
+    (modify-syntax-entry ?|  "." )
+    (modify-syntax-entry ?\' "\"")
+    (modify-syntax-entry ?<  "." )
+    (modify-syntax-entry ?>  "." )
    ;(setq-local indent-line-function #'sas-indent-line)
  (setq-local sentence-end ";[\t\n */]*"
               paragraph-start "^[ \t]*$"
