@@ -294,7 +294,7 @@ use `start-file-process'."
   "Function to remove page-break in STRING."
   (replace-regexp-in-string "\014" "\n" string))
 
-(defun run-sas (&optional cmd dedicated show)
+(defun run-sas (&optional cmd dedicated show logseparated realsession)
 "Run an inferior Sas process.
 
 Argument CMD defaults to `sas-shell-calculate-command' return
@@ -310,7 +310,13 @@ able to switch it to use a dedicated one.
 
 Runs the hook `inferior-sas-mode-hook' after
 `comint-mode-hook' is run.  (Type \\[describe-mode] in the
-process buffer for a list of commands.)"
+process buffer for a list of commands.)
+
+If LOGSEPARATED is non nil it run sas with log separated
+(whatever the value of the `sas-log-separated' variable)
+
+If REALSESSION is non nil it run sas in comint buffer
+(whatever the value of the `sas-realsession' variable)"
   (interactive
    (if current-prefix-arg
        (list
@@ -318,11 +324,12 @@ process buffer for a list of commands.)"
         (y-or-n-p "Make dedicated process? ")
         (= (prefix-numeric-value current-prefix-arg) 4))
      (list (sas-shell-calculate-command) nil t)))
-  (if sas-realsession
+  (if (or realsession sas-realsession)
   (let ((buffer
          (sas-shell-make-comint
           (or cmd (sas-shell-calculate-command))
-          (sas-shell-get-process-name dedicated) dedicated show)))
+          (sas-shell-get-process-name dedicated)
+          dedicated show nil logseparated)))
     (pop-to-buffer buffer)
     (get-buffer-process buffer))
   (sas-make-fakesession 't sas-user-library)))
@@ -457,7 +464,7 @@ of `sas-shell-buffer-name'."
       (tramp-send-command
        vec (format "unset %s" (mapconcat 'identity unset " ")) t))))
 
-(defun sas-shell-make-comint (cmd proc-name &optional dedicated  show internal)
+(defun sas-shell-make-comint (cmd proc-name &optional dedicated  show internal logseparated)
 "Create a Sas shell comint buffer.
 CMD is the Sas command to be executed and PROC-NAME is the
 process name the comint buffer will get.  After the comint buffer
@@ -469,7 +476,8 @@ optional argument INTERNAL is non-nil this process is run on a
 buffer with a name that starts with a space, following the Emacs
 convention for temporary/internal buffers, and also makes sure
 the user is not queried for confirmation when the process is
-killed."
+killed. If LOGSEPARATED is non nil it run sas with log separated
+(whatever the value of the `sas-log-separated' variable)"
   (save-excursion
     (sas-shell-with-environment
      (let* ((proc-buffer-name
@@ -478,9 +486,9 @@ killed."
          (let* ((cmdlist (split-string-and-unquote cmd))
                 (interpreter (car cmdlist))
                 (args (cdr cmdlist))
-                (bufstderr (if sas-log-separated
+                (bufstderr (if (or logseparated sas-log-separated)
                              (get-buffer-create (sas-shell-get-errorbuffer-name dedicated))))
-                (buffer (if sas-log-separated
+                (buffer (if (or logseparated sas-log-separated)
                             (apply #'sas--make-comint-in-buffer-std
                                    proc-name proc-buffer-name
                                    interpreter nil bufstderr args)
@@ -497,7 +505,8 @@ killed."
                 (sas-shell-interpreter interpreter)
                 (sas-shell-interpreter-args
                  (mapconcat #'identity args " ")))
-           (if sas-log-separated (with-current-buffer bufstderr
+           (if (or logseparated sas-log-separated)
+               (with-current-buffer bufstderr
              (inferior-sas-mode)))
            (with-current-buffer buffer
              (inferior-sas-mode))
@@ -824,13 +833,14 @@ to skip the first displacement to the end of statement."
   (if (not redo)
       (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
-    (if (re-search-backward "[ \t\n]+proc[ \t\n]\\|[ \t\n]+data[ \t\n]+\\|[ \t\n]+%macro[ \t\n]*" (point-min) t)
+    (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\)" (point-min) t)
         (if (or (sas-syntax-context 'comment)
-                (looking-at "[ \t\n]+data[ \t\n]+="))
+                (looking-at "\\([ \t\n]\\|$\\)+data[ \t\n]+="))
             (sas-beginning-of-sas-proc t)
           (progn
-            (if (looking-at "[ \t\n]+proc[ \t\n]+\\([A-Za-z]+\\)")
-                (setq nameproc (match-string 1)))
+            (if (looking-at "\\([ \t\n]+\\|^\\)proc[ \t\n]+\\([A-Za-z]+\\)")
+                (setq nameproc (match-string 1))
+              (setq nameproc nil))
             (skip-chars-forward sas-white-chars)
             (concat nameproc "")))
       (goto-char (point-min)))))
@@ -1004,9 +1014,11 @@ If EDIT is not nil fsview in edit mode else browseonly."
           (sas-command
            (concat "proc print data="
                    lookfor-table
-                   "(obs="
-                   (number-to-string sas-view-maxnumber-of-rows)
-                   "); run;")))
+                   (if sas-view-maxnumber-of-rows
+                       (concat "(obs="
+                               (number-to-string sas-view-maxnumber-of-rows)
+                               ");"))
+                   "run;")))
     (if sas-realsession
         (let ((process (sas-shell-get-process-or-error nil)))
           (when sas-verbose (message "Sent: %s" sas-command))
