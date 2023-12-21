@@ -2160,6 +2160,10 @@ Mainly it chooses beetween `data ... run' and `data= .'."
               comment-end "*/"
               comment-end-skip "[*]/"
               comment-column 50
+              syntax-propertize-function
+                (syntax-propertize-rules
+                             ("^[ ]*\\([*]\\)" (1 "<"))
+                             ("\\(;\\)[ ]*$" (1 ">")))
               smie-indent-basic 4
               smie-blink-matching-inners nil
               smie-blink-matching-triggers
