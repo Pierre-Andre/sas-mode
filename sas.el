@@ -1,6 +1,6 @@
 ;;; sas.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 1997-2021 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2023 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
 ;; Author: Fabián E. Gallina <fgallina@gnu.org>
@@ -9,8 +9,8 @@
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
-;; Modified: 2023-02-27
-;; Version: 0.7.0
+;; Modified: 2023-21-12
+;; Version: 0.9.2
 ;; Keywords: languages
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "27.1"))
@@ -38,6 +38,7 @@
 ;;; Code:
 (require 'comint)
 (require 'tramp-sh)
+(require 'filenotify)
 
 (defcustom sas-shell-interpreter "sas"
   "Default Sas interpreter for shell."
@@ -47,12 +48,13 @@
   "If nil SAS buffer will contains LOG and Output."
   :type 'string
   :group 'sas)
-(defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nonumber -nodate -nocenter -terminal -pagesize max -nosyntaxcheck -cleanup"
+(defcustom sas-shell-interpreter-args "-nodms -nonews -stdio -nofullstimer -nonumber -nodate -nocenter -terminal -pagesize max -linesize 80 -nosyntaxcheck -cleanup"
   "Default arguments for the Sas interpreter to make a real session using comint.
 \"-nodms -stdio\" is the important part."
   :type 'string
   :group 'sas)
-(defcustom sas-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max -nosyntaxcheck"
+
+(defcustom sas-shell-command-interpreter-args "-nodms -nonews -nofullstimer -nodate -nocenter -terminal -pagesize max  -linesize 80 -nosyntaxcheck"
   "Default arguments for the Sas (Unix/Linux) interpreter."
   :type 'string
   :group 'sas)
@@ -62,10 +64,56 @@
   :group 'sas)
 
 (defcustom sas-graphics-directory "sasfigures"
-  "Default buffer name for Sas interpreter."
+  "Default directory name for Sas figures."
   :type 'string
   :group 'sas
   :safe 'stringp)
+(defcustom sas-graphics-format "svg"
+  "Default format for figure: svg, pdf, png are classical."
+  :type 'string
+  :group 'sas
+  :safe 'stringp)
+(defcustom sas-graphics-maximum-wait-secs 0.1
+  "Maximum elapsed time before emacs stop trying to display graphic file.
+Sas is sometimes slow in making graphics file, thus there is a while
+loop which wait for file-attribute-size to be greater than 1024. If time
+elapsed is greater than this variable, emacs try to open graphics file
+with a idle-timer."
+  :type 'number
+  :group 'sas
+  :safe 'numberp)
+(defcustom sas-graphics-global-figures-output 't
+  "Sas mode try to save graphics as file without user specific command.
+For realsession, the `sas-graphics-directory' is emptied before starting
+Sas buffer. After Sas buffer is launched a sas command is submitted in
+order to save all graphics issued by Sas. This command consists of
+setting a sas filename to `sas-graphics-directory' for both ods and classical graphics. Until the session is closed all figured will be exported to svg files in  `sas-graphics-directory'.
+For non realsession, all region or files are prepended with the command to save all graphics issued by Sas. At the end of region/file a classical quit and ods graphics off is issued."
+  :type 'string
+  :group 'sas
+  :safe 'stringp)
+(defcustom sas-graphics-global-automatic-figures-display 't
+  "Sas mode try to save display figures in `sas-graphics-directory'.
+If non-nil sas-mode will use filenotify to watch creation of
+files in `sas-graphics-directory'. When a new file is created it is
+displayed in a window (see  also `sas-graphics-specific-windows').
+If nil nothing is done."
+  :type 'string
+  :group 'sas
+  :safe 'stringp)
+(defcustom sas-graphics-specific-windows 't
+  "Sas mode try to display figures in a new window.
+If `sas-graphics-global-automatic-figures-display' is non-nil and
+`sas-graphics-specific-windows' is non-nil then a specific windows is
+created for displaying graphics output. When a new file is created it will
+be displayed in a specific window. If  `sas-graphics-specific-windows' is
+nil and `sas-graphics-global-automatic-figures-display' is non-nil graphics output
+are displayed in the same windows as the *Sas* buffer."
+  :type 'string
+  :group 'sas
+  :safe 'stringp)
+
+
 (defcustom sas-shell-buffer-name "Sas"
   "Default buffer name for Sas interpreter."
   :type 'string
@@ -190,7 +238,7 @@ series of processes in the same Comint buffer.  The hook
       (goto-char (point-max))
       (set-marker (process-mark proc) (point))
       (cond (startcommand
-        (sleep-for 1)
+        (sleep-for sas-graphics-pause)
 	     (goto-char (point-max))
           (comint-send-string proc startcommand)))
       (run-hooks 'comint-exec-hook)
@@ -294,6 +342,10 @@ use `start-file-process'."
   "Function to remove page-break in STRING."
   (replace-regexp-in-string "\014" "\n" string))
 
+(defvar sas-graphics-windows nil)
+(defvar sas-graphics-run-timer-secs 5)
+(defvar sas-graphics-file-size-threshold 1024)
+
 (defun run-sas (&optional cmd dedicated show logseparated realsession)
 "Run an inferior Sas process.
 
@@ -329,8 +381,23 @@ If REALSESSION is non nil it run sas in comint buffer
          (sas-shell-make-comint
           (or cmd (sas-shell-calculate-command))
           (sas-shell-get-process-name dedicated)
-          dedicated show nil logseparated)))
-    (pop-to-buffer buffer)
+          dedicated show nil logseparated))
+        (window (selected-window)))
+    (if sas-graphics-global-figures-output
+        (let ((prestring
+              (progn
+                (if (file-directory-p (sas-graphics-get-directory-of-figures))
+                    (sas-clear-all-figures)
+                  (make-directory (sas-graphics-get-directory-of-figures)))
+                (concat "filename curdir \""
+                        sas-graphics-directory
+                        "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))))
+          (if sas-graphics-global-automatic-figures-display
+              (file-notify-add-watch (sas-graphics-get-directory-of-figures)
+                  '(change)  'sas-graphics-figure-created-callback))
+          (sas-shell-send-string prestring (get-buffer-process buffer))))
+   (pop-to-buffer buffer)
+   (select-window window)
     (get-buffer-process buffer))
   (sas-make-fakesession 't sas-user-library)))
 
@@ -424,6 +491,11 @@ of `sas-shell-buffer-name'."
   (if dedicated
       (format "*Log-%s[%s]*" sas-shell-buffer-name (buffer-name))
    (format "*Log-%s*"  sas-shell-buffer-name)))
+
+(defun sas-graphics-get-directory-of-figures ()
+"Calculate the directory of sas buffer."
+ (with-current-buffer (sas-shell-get-buffer)
+       (concat comint-file-name-prefix sas-graphics-directory)))
 
 (defun sas-shell-tramp-refresh-remote-path (vec paths)
   "Update VEC's remote-path giving PATHS priority."
@@ -581,11 +653,17 @@ SAS-USER-LIBRARY-LOC is a string which will be used as a user library for Sas."
 
 (defvar sas-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map [(control return)] #'sas-shell-send-dwim)
     (define-key map "\C-c\C-r"   #'sas-shell-send-region)
     (define-key map "\C-c\C-b"   #'sas-shell-send-buffer)
     (define-key map "\C-c\C-j"   #'sas-shell-send-line)
-    (define-key map [(control return)] #'sas-shell-send-dwim)
-    (define-key map "\C-c\C-v"   #'sas-view-table)
+    (define-key map "\C-c\C-k" #'sas-clear-output-buffer)
+    (define-key map "\C-c\C-d" #'sas-clear-all-figures)
+    (define-key map "\C-c\C-c" #'sas-clear-log-buffer)
+     (define-key map "\C-c\C-v" #'sas-graphics-view-last-figure)
+     (define-key map "\C-c\C-t" #'sas-view-table)
+     (define-key map "\C-c\C-s" #'sas-display-sas-comint-buffer)
+      (define-key map "\C-c\C-h" #'sas-doc-dwim)
     (define-key map "\C-c\C-q"   #'sas-exit)
    map)
   "Keymap for `sas-mode'.")
@@ -663,14 +741,24 @@ process running; defaults to t when called interactively."
       (sas-send-string-with-shell-command string sas-buffer-user-library))))
 
 (defun sas-shell-send-buffer (&optional msg)
-"Send the entire buffer to inferior Sas process.
+  "Send the entire buffer to inferior Sas process.
 When optional argument MSG is
 non-nil, forces display of a user-friendly message if there's no
 process running; defaults to t when called interactively."
   (interactive (list t))
   (save-restriction
     (widen)
-    (sas-shell-send-region (point-min) (point-max)  msg)))
+    (let*
+        ((prestring
+          (if (and sas-graphics-global-figures-output (not sas-realsession))
+              (progn
+                (unless (file-directory-p (sas-graphics-get-directory-of-figures))
+                  (make-directory (sas-graphics-get-directory-of-figures)))
+                (concat "filename curdir \""
+                        sas-graphics-directory
+                        "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))))
+         (poststring (if prestring "quit; ods graphics off;\n")))
+      (sas-shell-send-region (point-min) (point-max)  msg prestring poststring))))
 
 (defun sas-shell-send-file (file-name &optional process msg)
 "Send FILE-NAME to inferior Sas PROCESS.
@@ -685,10 +773,19 @@ defaults to t when called interactively."
   (if sas-realsession
   (let* ((process (or process (sas-shell-get-process-or-error msg)))
          (file-name (file-local-name (expand-file-name file-name)))
+         (prestring
+          (if (and sas-graphics-global-figures-output (not sas-realsession))
+              (progn
+                (unless (file-directory-p (sas-graphics-get-directory-of-figures))
+                  (make-directory (sas-graphics-get-directory-of-figures)))
+                (concat "filename curdir \""
+                        sas-graphics-directory
+                        "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))))
+         (poststring (if prestring "quit; ods graphics off;\n"))
          (string (with-temp-buffer
     (insert-file-contents file-name)
     (buffer-string))))
-    (sas-shell-send-string string process t))
+    (sas-shell-send-string (concat prestring string poststring) process t))
   (let* ((file-name (file-local-name (expand-file-name file-name)))
          (string (with-temp-buffer
     (insert-file-contents file-name)
@@ -735,12 +832,19 @@ defaults to t when called interactively."
       (if (and nameproc (string-equal (downcase nameproc) "iml"))
           (sas-shell-send-line t)
         (progn
-          (if (and nameproc (member (downcase nameproc) sas-mode-list-graphics-proc))
+          (when sas-verbose (message "nameproc %s" nameproc))
+          (if (and sas-graphics-global-figures-output (not sas-realsession))
               (progn
-                (unless (file-directory-p sas-graphics-directory)
-                  (make-directory sas-graphics-directory))
-                (setq prestring (concat "filename curdir \"" sas-graphics-directory "\" ; goptions device=svg gsfname=curdir ; ods listing gpath=curdir; ods graphics on / imagefmt=svg ; \n"))
-                (setq poststring "quit; ods graphics off;\n")))
+                (unless (file-directory-p (sas-graphics-get-directory-of-figures))
+                  (make-directory (sas-graphics-get-directory-of-figures)))
+                (setq prestring (concat "filename curdir \""
+                                        sas-graphics-directory
+                                        "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))
+                (setq poststring "quit; ods graphics off;\n"))
+            (if (and nameproc
+                     (member (downcase nameproc) sas-mode-list-graphics-proc)
+                     (not sas-graphics-global-figures-output))
+                (message "graphical procedure %s detected and no global support, proceeding..." nameproc)))
           (save-excursion
             (sas-end-of-sas-proc t nil)
             (setq endpos (point))
@@ -815,7 +919,14 @@ character address of the specified TYPE."
               (forward-char 2)
             (forward-char 1))
           (skip-chars-forward sas-white-chars)))
-    (goto-char (point-min))))
+    (progn
+      (goto-char (point-min))
+      (while (or (sas-syntax-context 'comment)
+             (looking-at "/")
+             (looking-at "*")
+             (looking-at "\n")
+             (looking-at " "))
+         (forward-char 1)))))
 
 (defun sas-end-of-sas-statement ()
 "Move point to beginning of current sas statement."
@@ -835,11 +946,11 @@ to skip the first displacement to the end of statement."
   (let (nameproc (case-fold-search t))
     (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\)" (point-min) t)
         (if (or (sas-syntax-context 'comment)
-                (looking-at "\\([ \t\n]\\|$\\)+data[ \t\n]+="))
+                (looking-at "\\([ \t\n]\\|^\\)+data[ \t\n]+="))
             (sas-beginning-of-sas-proc t)
           (progn
             (if (looking-at "\\([ \t\n]+\\|^\\)proc[ \t\n]+\\([A-Za-z]+\\)")
-                (setq nameproc (match-string 1))
+                (setq nameproc (match-string 2))
               (setq nameproc nil))
             (skip-chars-forward sas-white-chars)
             (concat nameproc "")))
@@ -966,6 +1077,19 @@ SESSION is the library used by Sas."
     (with-current-buffer (format "*%s*" (sas-shell-get-process-name nil))
       (comint-clear-buffer)))
 
+(defun sas-clear-all-figures ()
+  "Delete all file in the `sas-graphics-directory'."
+  (interactive)
+  (let ((filelist (directory-files (sas-graphics-get-directory-of-figures) 'full  directory-files-no-dot-files-regexp)))
+  (mapcar #'delete-file filelist)))
+
+(defun sas-clear-last-figure ()
+  "Delete last file in the `sas-graphics-directory'."
+  (interactive)
+  (let ((filelist (car (directory-files (sas-graphics-get-directory-of-figures) 'full  directory-files-no-dot-files-regexp #'file-newer-than-file-p))))
+    (if filelist
+      (delete-file filelist))))
+
 (defun sas--get-point-symbol ()
   "Get symbol at point."
   (if (region-active-p)
@@ -1026,6 +1150,74 @@ If EDIT is not nil fsview in edit mode else browseonly."
       (progn
         (when sas-verbose (message "Sent: %s" sas-command))
         (sas-send-string-with-shell-command sas-command sas-buffer-user-library)))))
+
+(defun sas-graphics-figure-created-callback (event)
+  "Open the graphic file."
+  (if (equal (nth 1  event) 'created)
+      (sas-graphics-display-figure (nth 2  event))))
+
+(defun sas-graphics-display-figure (file)
+  "Display the graphic file."
+  (let ((window (selected-window))
+        (time (current-time))
+        (windowtoopen
+         (if sas-graphics-specific-windows
+             (if (and sas-graphics-windows
+                      (window-live-p sas-graphics-windows))
+                 sas-graphics-windows
+             (setq sas-graphics-windows (split-window (select-window (sas-get-buffer-window-sas-comint-buffer)))))
+            (sas-get-buffer-window-sas-comint-buffer))))
+        (while
+            (and
+             (<= (file-attribute-size (file-attributes file)) sas-graphics-file-size-threshold)
+             (<= (float-time (time-since time)) sas-graphics-maximum-wait-secs))
+          (sleep-for 0.01))
+        (if (> (file-attribute-size (file-attributes file)) sas-graphics-file-size-threshold)
+            (progn
+              (select-window windowtoopen)
+              (find-file file))
+        (run-with-idle-timer sas-graphics-run-timer-secs nil #'sas-graphics-open-file-in-window file  windowtoopen))))
+(defun sas-graphics-open-file-in-window (file window)
+  "Open file in specific window."
+     (select-window window)
+     (find-file file))
+(defun sas-graphics-view-last-figure ()
+  "Open the last file in the `sas-graphics-directory'.
+This file is the last figure displayed by Sas."
+  (interactive)
+  (let* ((window (selected-window))
+        (windowtoopen (sas-get-buffer-window-sas-comint-buffer))
+        (dirgraphics (sas-graphics-get-directory-of-figures))
+        (filelist (sort (directory-files-and-attributes
+                     dirgraphics)
+                        #'(lambda (x y)
+                            (unless (file-directory-p (car x))
+                              (if (file-directory-p (car y))
+                                  't
+                              (not (time-less-p (nth 6 x) (nth 6 y))))))))
+        (file (concat dirgraphics "/" (car (car filelist)))))
+     (if (and file (not (file-directory-p file)))
+            (progn
+              (select-window windowtoopen)
+              (find-file file)
+              (select-window window)))))
+
+(defun sas-get-buffer-window-sas-comint-buffer ()
+  "Get the window of the Sas buffer, reopen it if needed."
+  (let ((windowtoopen (get-buffer-window (sas-shell-get-buffer))))
+    (if (window-live-p windowtoopen)
+       windowtoopen
+      (progn
+        (sas-display-sas-comint-buffer)
+        (get-buffer-window (sas-shell-get-buffer))))))
+
+(defun sas-display-sas-comint-buffer ()
+  "Display the *Sas* inferior comint buffer."
+  (interactive)
+  (let ((window (selected-window)))
+    (display-buffer  (sas-shell-get-buffer)
+                '(display-buffer-in-previous-window . ()))
+    (select-window window)))
 
 (defvar sas-doc-proc-list
 '(("carima" . ("casecon" "casecon_carima_syntax.htm"))
