@@ -9,8 +9,8 @@
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
-;; Modified: 2023-21-12
-;; Version: 0.9.2
+;; Modified: 2024-01-19
+;; Version: 1.0.0
 ;; Keywords: languages
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "27.1"))
@@ -829,7 +829,8 @@ defaults to t when called interactively."
         (setq nameproc (sas-beginning-of-sas-proc))
         (setq begpos (point))
         (when sas-verbose (message "begpos %s" begpos)))
-      (if (and nameproc (string-equal (downcase nameproc) "iml"))
+      (if (and nameproc (or (string-equal (downcase nameproc) "iml")
+(string-equal nameproc "noblockfound")))
           (sas-shell-send-line t)
         (progn
           (when sas-verbose (message "nameproc %s" nameproc))
@@ -944,17 +945,26 @@ to skip the first displacement to the end of statement."
   (if (not redo)
       (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
-    (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\)" (point-min) t)
+    (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\|run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;\\)" (point-min) t)
         (if (or (sas-syntax-context 'comment)
                 (looking-at "\\([ \t\n]\\|^\\)+data[ \t\n]+="))
+            ;; comment or data=... redo search
             (sas-beginning-of-sas-proc t)
+          ;; other cases
           (progn
+            ;; proc ...
             (if (looking-at "\\([ \t\n]+\\|^\\)proc[ \t\n]+\\([A-Za-z]+\\)")
                 (setq nameproc (match-string 2))
               (setq nameproc nil))
+            ;; a closing block isfound before
+            (if (looking-at "[ \t\n]+\\(run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;\\)")
+                (setq nameproc "noblockfound"))
+            ;; skip and return
             (skip-chars-forward sas-white-chars)
             (concat nameproc "")))
-      (goto-char (point-min)))))
+      ;; nothing is found: go to the beginning of line
+      (progn (beginning-of-line)
+             "noblockfound"))))
 
 (defun sas-end-of-sas-proc (&optional plusone redo)
 "Move point to end of sas proc, macro or data step.
@@ -965,14 +975,15 @@ to skip the first displacement to the end of statement."
   (if (not redo)
       (progn
         (sas-beginning-of-sas-statement)
-        (forward-char -1)))
+        (if (> (point) 1)
+        (forward-char -1))))
   (let ((case-fold-search t))
-    (if (re-search-forward "[ \t\n]+run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;" (point-max) t)
+    (if (re-search-forward "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;" (point-max) t)
         (if (sas-syntax-context 'comment)
             (sas-end-of-sas-proc nil t)
           (if (and plusone (< (point) (point-max)))
               (forward-char 1)))
-      (goto-char (point-max)))))
+      (goto-char (end-of-line)))))
 
 (defun sas-next-sas-proc (arg)
 "Move point to beginning of next sas proc, macro or data step.
@@ -2027,7 +2038,7 @@ sas-mode-font-lock-functions10))
 (require 'smie)
 (defvar sas-smie-sample-grammar nil
   "Sample BNF grammar for `smie'.")
-(setq sas-smie-sample-grammar
+(setq sas-smie-grammar
       (smie-prec2->grammar
        (smie-merge-prec2s
         (smie-bnf->prec2
@@ -2111,7 +2122,7 @@ Mainly it chooses beetween `data ... run' and `data= .'."
      ((equal tok "data") (sas--data-token))
      (t tok))))
 
-(defun sas-smie-sample-rules (kind token)
+(defun sas-smie-rules (kind token)
   "Perform indentation of KIND on TOKEN using the `smie' engine."
   (pcase (list kind token)
     ;; From Octave-mode:
@@ -2169,7 +2180,7 @@ Mainly it chooses beetween `data ... run' and `data= .'."
               smie-blink-matching-triggers
               (cons ?\; smie-blink-matching-triggers))
   (set-syntax-table sas-mode-syntax-table)
-  (smie-setup sas-smie-sample-grammar #'sas-smie-sample-rules
+  (smie-setup sas-smie-grammar #'sas-smie-rules
               :forward-token #'sas-forward-token
               :backward-token #'sas-backward-token)
   (setq font-lock-defaults
