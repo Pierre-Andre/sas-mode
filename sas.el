@@ -1,6 +1,6 @@
 ;;; sas.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 1997-2023 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
 ;; Author: Fabián E. Gallina <fgallina@gnu.org>
@@ -908,6 +908,23 @@ character address of the specified TYPE."
       ('string (and (nth 3 ppss) (nth 8 ppss)))
       ('paren (nth 1 ppss))
       (_ nil))))
+
+(defun sas-mark-block ()
+  "Put point at the beginning of this Sas block, mark at the end.
+The block marked is the one that contains point or follows point.
+It does not include final `;`"
+  (interactive)
+  (if (and (looking-at "\\sw\\|\\s_")
+           (looking-back "\\sw\\|\\s_" (1- (point))))
+      (skip-syntax-forward "w_"))
+  (unless (or (looking-at "proc\\|data[ \t\n]+\\|%macro")
+              (save-excursion
+                (let* ((token (funcall smie-forward-token-function))
+                       (level (assoc token smie-grammar)))
+                  (message "level %s; token %s" level token)
+                  (and level (member token '("proc" "%macro" "data"))))))
+    (backward-up-list 1))
+  (mark-sexp))
 
 (defun sas-beginning-of-sas-statement ()
 "Move point to beginning of current sas statement."
@@ -2036,6 +2053,25 @@ sas-mode-font-lock-macrosfunctions09
 sas-mode-font-lock-functions10))
 
 (require 'smie)
+(defconst sas-smie-precedence-table
+  '((assoc ";")
+    ;; (nonassoc "=") ;2
+    (assoc ",")                         ;1
+    (assoc "|" "OR")                        ;3
+    (assoc "&" "AND")                        ;4
+    (nonassoc "IN")
+    (nonassoc ">" "GT")
+    (nonassoc ">=" "GE")
+    (nonassoc "!=" "~=" "NE")
+    (nonassoc "EQ")
+    (nonassoc "<=" "LE")
+    (nonassoc "<" "LT")
+    (assoc "+" "-")
+    (assoc "*" "/")
+    (assoc "><" "MIN")
+    (assoc "<>" "MAX")
+   (nonassoc "~" "^" "NOT")    ;And unary "+" and "-".
+    (right "**")))
 (defvar sas-smie-sample-grammar nil
   "Sample BNF grammar for `smie'.")
 (setq sas-smie-grammar
@@ -2055,6 +2091,7 @@ sas-mode-font-lock-functions10))
            (instp
                    ("dataequal" "=" atom)
                     ("model" atom "=" formula)
+                    (atom "=" formula)
                     (output)
                    (atom))
            ;; (instp (dataeq)
@@ -2073,26 +2110,20 @@ sas-mode-font-lock-functions10))
                   (instm))
            (procrun ("proc" instsp "run"))
            (datarun ("data" instsd "run"))
-           (macro ("%macro" instsm "%mend")))
+           (macro ("%macro" instsm "%mend"))
+           (block (procrun)
+                  (datarun)
+                  (macro))
+           (prog (block ";" block)
+                 (block)))
          '((assoc ";")
            (assoc "=")))
-        (smie-precs->prec2
-         '((assoc ";")
-           (assoc "&" "AND")
-           (assoc "|" "OR")
-           (nonassoc "IN")
-           (nonassoc ">" "GT")
-           (nonassoc ">=" "GE")
-           (nonassoc "!=" "~=" "NE")
-           (nonassoc "EQ")
-           (nonassoc "<=" "LE")
-           (nonassoc "<" "LT")
-           (assoc "+" "-")
-           (assoc "*" "/")
-           (assoc "><" "MIN")
-           (assoc "<>" "MAX")
-           (nonassoc "~" "^" "NOT")    ;And unary "+" and "-".
-           (right "**"))))))
+         ;; sas-smie-precedence-table)
+           ;; (assoc "=")))                ;
+        (smie-precs->prec2 sas-smie-precedence-table))))
+        ;; (smie-precs->prec2 '((nonassoc ";") (nonassoc ":"))))))
+
+(defconst sas-smie-operator-regexp  "\\(?:\\^=\\|~=\\|\\*\\*\\|<=\\|>=\\|<\\|>\\|AND\\|OR\\|NEQ\\|EQ\\|IN\\|[&*+,/;|-]\\)")
 
 (defun sas--data-token ()
   "Get token.
@@ -2121,6 +2152,45 @@ Mainly it chooses beetween `data ... run' and `data= .'."
     (cond
      ((equal tok "data") (sas--data-token))
      (t tok))))
+;; (defun sas-backward-token ()
+;;   "Backward token for  `smie'."
+;;    (forward-comment (- (point)))
+;;   (let ((tok (if (looking-back sas-smie-operator-regexp (- (point) 3) t)
+;;                  (progn (goto-char (match-beginning 0)) (match-string 0))
+;;                (smie-default-backward-token))))
+;;     (cond
+;;    ;;  ((and (equal tok "") (looking-at "\n"))
+;;       ;; (let ((pos (point)))
+;;       ;;   (if (not (= 0 (mod (skip-chars-backward "/*") 2)))
+;;       ;;       (sas-backward-token)
+;;       ;;     (goto-char pos)
+;;       ;;     tok)))
+;;         ;; (let ((pos (point))
+;;       ;;       (newtok (progn (backward-char)
+;;       ;;                      (sas-backward-token))))
+;;       ;;     (goto-char pos)
+;;       ;;     (message "newtok %s" newtok)
+;;           ;; tok))
+;;      ((equal tok "data") (sas--data-token))
+;;      (t tok))))
+
+;; (defun smie-indent-backward-token2 ()
+;;   "Skip token backward and return it, along with its levels."
+;;   (let ((tok (funcall smie-backward-token-function))
+;;         class)
+;;     (cond
+;;      ((< 0 (length tok)) (assoc tok smie-grammar))
+;;      ;; 4 == open paren syntax, 5 == close.
+;;      ((memq (setq class (syntax-class (syntax-after (1- (point))))) '(4 5))
+;;       (forward-char -1)
+;;       (cons (buffer-substring-no-properties (point) (1+ (point)))
+;;             (if (eq class 4) '(nil 0) '(0 nil))))
+;;      ((memq class '(7 15))
+;;       (backward-sexp 1)
+;;       nil)
+;;      ((bobp) nil)
+;;      (t (error "Bumped (back) into unknown token %s" tok)))))
+;; (advice-add 'smie-indent-backward-token :override #' smie-indent-backward-token2)
 
 (defun sas-smie-rules (kind token)
   "Perform indentation of KIND on TOKEN using the `smie' engine."
@@ -2131,6 +2201,7 @@ Mainly it chooses beetween `data ... run' and `data= .'."
     ;; - changes to sas-block-offset wouldn't take effect immediately.
     ;; - edebug wouldn't show the use of this variable.
     ('(:after "%macro") smie-indent-basic)
+    ;; ('(:after ";") smie-indent-basic)
     ('(:after "proc") smie-indent-basic)
     ('(:after "data") smie-indent-basic)
     ('(:after "dataequal") 0)
@@ -2173,8 +2244,8 @@ Mainly it chooses beetween `data ... run' and `data= .'."
               comment-column 50
               syntax-propertize-function
                 (syntax-propertize-rules
-                             ("^[ ]*\\([*]\\)" (1 "<"))
-                             ("\\(;\\)[ ]*$" (1 ">")))
+                             ("^[ ]*\\([*]\\)" (1 "< b"))
+                             (";[ ]*\\(\n\\)" (1 "> b")))
               smie-indent-basic 4
               smie-blink-matching-inners nil
               smie-blink-matching-triggers
