@@ -824,16 +824,20 @@ defaults to t when called interactively."
   (interactive)
   (if (use-region-p)
       (sas-shell-send-region (region-beginning) (region-end) t)
-    (let (begpos endpos nameproc prestring poststring)
+    (let (begpos endpos nameblock nameproc prestring poststring)
       (save-excursion
-        (setq nameproc (sas-beginning-of-sas-proc))
+        (setq nameblock (sas-beginning-of-sas-proc))
         (setq begpos (point))
         (when sas-verbose (message "begpos %s" begpos)))
-      (if (and nameproc (or (string-equal (downcase nameproc) "iml")
-(string-equal nameproc "noblockfound")))
+      (if (and nameblock (or (string-equal (downcase nameblock) "proc_iml")
+(string-equal nameblock "noblockfound")
+(string-equal nameblock "closingrun")
+(string-equal nameblock "closingmacro")
+(string-equal nameblock "error")))
           (sas-shell-send-line t)
         (progn
-          (when sas-verbose (message "nameproc %s" nameproc))
+          (when sas-verbose (message "name of (beginning) block: %s" nameblock))
+          (setq nameproc (substring nameblock 6))
           (if (and sas-graphics-global-figures-output (not sas-realsession))
               (progn
                 (unless (file-directory-p (sas-graphics-get-directory-of-figures))
@@ -847,7 +851,7 @@ defaults to t when called interactively."
                      (not sas-graphics-global-figures-output))
                 (message "graphical procedure %s detected and no global support, proceeding..." nameproc)))
           (save-excursion
-            (sas-end-of-sas-proc t nil)
+            (sas-end-of-sas-proc nameblock t nil )
             (setq endpos (point))
             (when sas-verbose (message "endpos %s" endpos)))
           (sas-shell-send-region begpos endpos t prestring poststring))))))
@@ -963,44 +967,76 @@ to skip the first displacement to the end of statement."
       (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
     (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\|run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;\\)" (point-min) t)
+        (progn
+          (pcase (substring (match-string 2) 0 4)
+        ('"data"
         (if (or (sas-syntax-context 'comment)
                 (looking-at "\\([ \t\n]\\|^\\)+data[ \t\n]+="))
             ;; comment or data=... redo search
-            (sas-beginning-of-sas-proc t)
-          ;; other cases
-          (progn
-            ;; proc ...
-            (if (looking-at "\\([ \t\n]+\\|^\\)proc[ \t\n]+\\([A-Za-z]+\\)")
-                (setq nameproc (match-string 2))
-              (setq nameproc nil))
-            ;; a closing block isfound before
-            (if (looking-at "[ \t\n]+\\(run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;\\)")
-                (setq nameproc "noblockfound"))
-            ;; skip and return
-            (skip-chars-forward sas-white-chars)
-            (concat nameproc "")))
-      ;; nothing is found: go to the beginning of line
-      (progn (beginning-of-line)
-             "noblockfound"))))
+            (sas-beginning-of-sas-proc 't))
+        "data_block")
+          ('"proc"
+           (if (sas-syntax-context 'comment)
+               (sas-beginning-of-sas-proc 't)
+            (if (looking-at "proc[ \t\n]+\\([A-Za-z]+\\)")
+                (concat "proc_"(match-string 1))
+              "error")))
+          ('"%mac"
+           (if (sas-syntax-context 'comment)
+               (sas-beginning-of-sas-proc 't)
+           (if (looking-at "%macro[ \t\n]+\\([A-Za-z]+\\)")
+                (concat "macr_"(match-string 1))
+              "error")))
+          ('"%men"
+          (if (sas-syntax-context 'comment)
+               (sas-beginning-of-sas-proc 't)
+            "closingmacro"))
+          ('"run"
+          (if (sas-syntax-context 'comment)
+               (sas-beginning-of-sas-proc 't)
+           "closingrun"))
+          (_
+           (beginning-of-line)
+           "error")))
+            ;; noblockfound
+            (progn
+               (beginning-of-line)
+                "noblockfound"))))
 
-(defun sas-end-of-sas-proc (&optional plusone redo)
+
+(defun sas-end-of-sas-proc (blocktype &optional plusone redo)
 "Move point to end of sas proc, macro or data step.
+BLOCKTYPE is a string to select the type of end statement to search.
+Could be data_block proc_nameofproc or macro_name.
 If PLUSONE is non-nil point is moved forward of one char.
 Optional argument REDO (when non-nil) allows
-to skip the first displacement to the end of statement."
-  (interactive (list t nil))
+to skip the first displacement to the end of statement.
+"
+  (interactive (list nil t nil))
   (if (not redo)
       (progn
         (sas-beginning-of-sas-statement)
         (if (> (point) 1)
         (forward-char -1))))
-  (let ((case-fold-search t))
-    (if (re-search-forward "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;" (point-max) t)
+  (let (closingregexp (case-fold-search t))
+    (if blocktype
+        (pcase (substring blocktype 0 4)
+          ('"data"
+           (setq closingregexp  "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;"))
+          ('"proc"
+           (setq closingregexp  "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;"))
+          ('"macr"
+           (setq closingregexp  "\\(;[ \t\n]*\\|^\\)%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;"))
+          (_
+           (setq closingregexp "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;")))
+    (setq closingregexp "\\(;[ \t\n]*\\|^\\)run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;"))
+    (if (re-search-forward closingregexp (point-max) t)
         (if (sas-syntax-context 'comment)
-            (sas-end-of-sas-proc nil t)
+            (sas-end-of-sas-proc blocktype nil t)
           (if (and plusone (< (point) (point-max)))
               (forward-char 1)))
       (goto-char (end-of-line)))))
+
 
 (defun sas-next-sas-proc (arg)
 "Move point to beginning of next sas proc, macro or data step.
@@ -1706,16 +1742,16 @@ This file is the last figure displayed by Sas."
   ;; SAS execution blocks: DATA, %MACRO/%MEND, %DO/%END, etc.
        (cons (regexp-opt '("data" "start" "return" ;"proc"
                            "%macro" "%mend"
-                           "%do" "%to" "%by" "%end"
+                           "%do" "%do %while" "%do %until" "%to" "%by" "%end"
                            "%goto" "%go to"
                            "%if" "%then" "%else"
                            "%global" "%inc" "%include" "%input" "%local" "%let" "%put" "%sysexec")
                          'words) font-lock-constant-face)
  ;; SAS execution blocks that must be followed by a semi-colon
-       (cons (concat "\\<"
+       (cons (concat "\\<"              ;
                      (regexp-opt
-                      '("run;" "quit;" "endsas;" "finish;"
-                        "cards;" "cards4;" "datalines;" "datalines4;" "lines;" "lines4;")))
+                      '("run" "quit" "endsas" "finish"
+                        "cards" "cards4" "datalines" "datalines4" "lines" "lines4")) "[ \t]*;")
              font-lock-constant-face)))
 
 (defvar sas-mode-font-lock-statements06
@@ -1723,13 +1759,15 @@ This file is the last figure displayed by Sas."
        ;; SAS statements that must be followed by a semi-colon
        (cons (concat "\\<"
                      (regexp-opt
-                      '("end;" "list;" "lostcard;" "page;" "stop;")))
+                      '("end" "list" "lostcard" "page" "stop"))
+                     "[ \t]*;")
              font-lock-keyword-face)
 
        ;; SAS statements that must be followed by an equal sign
        (cons (concat "\\<"
                      (regexp-opt
-                      '("compress=" "in=" "out=" "sortedby=")))
+                      '("compress" "in" "out" "outtab" "sortedby"))
+                     "[ \t]*=")
              font-lock-keyword-face)))
 
 (defvar sas-mode-list-graphics-proc
@@ -1925,7 +1963,7 @@ This file is the last figure displayed by Sas."
 "depsl" "depsyd" "deptab" "dequote" "design"
 "designf" "det" "deviance" "dhms" "diag"
 "dif" "digamma" "dim" "dimension" "dinfo"
-"distance" "divide" "dnum" "do" "dopen"
+"distance" "divide" "dnum" "do" "do while" "do until" "dopen"
 "doptname" "doptnum" "dosubl" "dread" "dropnote"
 "dsname" "dsncatlgd" "dur" "duration" "durp"
 "echelon" "effrate" "eigval" "eigvec" "element"
@@ -2085,8 +2123,16 @@ sas-mode-font-lock-functions10))
             (atom "|" atom)
                   (atom))
            ;; (instsp (instsp ";" instsp) (instp))
-           (instsd (instsd ";" instsd) (instd))
-           (instsm (instsm ";" instsm) (instm))
+           (instsd
+            ("do" instsd "end")
+            (instsd ";" instsd)
+            ("else" exp-ifd))
+           (instsm
+            (procrun)
+            (datarun)
+            ("%do" instsm "%end")
+            (instsm ";" instsm)
+            ("%else" exp-ifm))
            (instsp (instsp ";" instsp) (instp))
            (instp
                    ("dataequal" "=" atom)
@@ -2100,14 +2146,13 @@ sas-mode-font-lock-functions10))
            ;; (model ("model" atom "=" atoms))
             (output ("output" instp)
                     ("output" "out" "=" instp))
-           (instd ("do" instsd "end")
-                  ("if" instd "then" instd)
-                  ("else" instd)
-                  (instd))
-           (instm ("%do" instsm "%end")
-                  ("%if" instm "%then" instm)
-                  ("%else" instm)
-                  (instm))
+           (exp-ifm
+                  ("%if" exp "%then")
+                  (exp))
+           (exp-ifd
+                  ("if" exp "then")
+                  (exp))
+           (exp ("(" exp ")"))
            (procrun ("proc" instsp "run"))
            (datarun ("data" instsd "run"))
            (macro ("%macro" instsm "%mend"))
@@ -2246,7 +2291,7 @@ Mainly it chooses beetween `data ... run' and `data= .'."
                 (syntax-propertize-rules
                              ("^[ ]*\\([*]\\)" (1 "< b"))
                              (";[ ]*\\(\n\\)" (1 "> b")))
-              smie-indent-basic 4
+              smie-indent-basic 2
               smie-blink-matching-inners nil
               smie-blink-matching-triggers
               (cons ?\; smie-blink-matching-triggers))
