@@ -9,8 +9,8 @@
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
-;; Modified: 2024-01-19
-;; Version: 1.0.0
+;; Modified: 2024-03-06
+;; Version: 1.0.1
 ;; Keywords: languages
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "27.1"))
@@ -29,7 +29,6 @@
 ;;;  Acknowledgements for ESS SAS-mode
 ;;;  Menu code for XEmacs/Lucid Emacs and startup mods
 ;;;  contributed by arossini@biostats.hmc.psu.edu
-;;;
 ;;; Last change: 2/1/95
 ;;; Last change: 01/15/02
 ;;
@@ -1778,7 +1777,7 @@ This file is the last figure displayed by Sas."
 (defvar sas-mode-font-lock-procname07
   (list
     ;; SAS procedure names
-       (cons (concat "\\<proc[ ]+"
+       (cons (concat "\\<proc[ \n\t]+"
                      (regexp-opt '(
 "access" "aceclus" "adaptivereg" "anom" "anova"
 "append" "arima" "assess" "authlib" "autoreg"
@@ -2197,45 +2196,6 @@ Mainly it chooses beetween `data ... run' and `data= .'."
     (cond
      ((equal tok "data") (sas--data-token))
      (t tok))))
-;; (defun sas-backward-token ()
-;;   "Backward token for  `smie'."
-;;    (forward-comment (- (point)))
-;;   (let ((tok (if (looking-back sas-smie-operator-regexp (- (point) 3) t)
-;;                  (progn (goto-char (match-beginning 0)) (match-string 0))
-;;                (smie-default-backward-token))))
-;;     (cond
-;;    ;;  ((and (equal tok "") (looking-at "\n"))
-;;       ;; (let ((pos (point)))
-;;       ;;   (if (not (= 0 (mod (skip-chars-backward "/*") 2)))
-;;       ;;       (sas-backward-token)
-;;       ;;     (goto-char pos)
-;;       ;;     tok)))
-;;         ;; (let ((pos (point))
-;;       ;;       (newtok (progn (backward-char)
-;;       ;;                      (sas-backward-token))))
-;;       ;;     (goto-char pos)
-;;       ;;     (message "newtok %s" newtok)
-;;           ;; tok))
-;;      ((equal tok "data") (sas--data-token))
-;;      (t tok))))
-
-;; (defun smie-indent-backward-token2 ()
-;;   "Skip token backward and return it, along with its levels."
-;;   (let ((tok (funcall smie-backward-token-function))
-;;         class)
-;;     (cond
-;;      ((< 0 (length tok)) (assoc tok smie-grammar))
-;;      ;; 4 == open paren syntax, 5 == close.
-;;      ((memq (setq class (syntax-class (syntax-after (1- (point))))) '(4 5))
-;;       (forward-char -1)
-;;       (cons (buffer-substring-no-properties (point) (1+ (point)))
-;;             (if (eq class 4) '(nil 0) '(0 nil))))
-;;      ((memq class '(7 15))
-;;       (backward-sexp 1)
-;;       nil)
-;;      ((bobp) nil)
-;;      (t (error "Bumped (back) into unknown token %s" tok)))))
-;; (advice-add 'smie-indent-backward-token :override #' smie-indent-backward-token2)
 
 (defun sas-smie-rules (kind token)
   "Perform indentation of KIND on TOKEN using the `smie' engine."
@@ -2259,25 +2219,25 @@ Mainly it chooses beetween `data ... run' and `data= .'."
 (define-derived-mode sas-mode prog-mode "sas"
   "Major mode for editing SAS source."
   :group 'sas-mode
-    (modify-syntax-entry ?*  ". 23" ) ; comment character
-    (modify-syntax-entry ?/  ". 14" ) ; comment character
-    (modify-syntax-entry ?\; "." )
-    (modify-syntax-entry ?%  "w" )
-    (modify-syntax-entry ?&  "w" )
-    (modify-syntax-entry ?_  "w" )
-    (modify-syntax-entry ?.  "w" )
-    (modify-syntax-entry ?\\ "." )  ;; backslash is punctuation
-    (modify-syntax-entry ?+  "." )
-    (modify-syntax-entry ?-  "." )
-    (modify-syntax-entry ?=  "." )
-    (modify-syntax-entry ?<  "." )
-    (modify-syntax-entry ?>  "." )
-    (modify-syntax-entry ?|  "." )
-    (modify-syntax-entry ?\' "\"")
-    (modify-syntax-entry ?<  "." )
-    (modify-syntax-entry ?>  "." )
-   ;(setq-local indent-line-function #'sas-indent-line)
- (setq-local sentence-end ";[\t\n */]*"
+  (modify-syntax-entry ?*  ". 23" ) ; comment character
+  (modify-syntax-entry ?/  ". 14" ) ; comment character
+  (modify-syntax-entry ?\; "." )
+  (modify-syntax-entry ?%  "w" )
+  (modify-syntax-entry ?&  "w" )
+  (modify-syntax-entry ?_  "w" )
+  (modify-syntax-entry ?.  "w" )
+  (modify-syntax-entry ?\\ "." )  ;; backslash is punctuation
+  (modify-syntax-entry ?+  "." )
+  (modify-syntax-entry ?-  "." )
+  (modify-syntax-entry ?=  "." )
+  (modify-syntax-entry ?<  "." )
+  (modify-syntax-entry ?>  "." )
+  (modify-syntax-entry ?|  "." )
+  (modify-syntax-entry ?\' "\"")
+  (modify-syntax-entry ?<  "." )
+  (modify-syntax-entry ?>  "." )
+                                        ;(setq-local indent-line-function #'sas-indent-line)
+  (setq-local sentence-end ";[\t\n */]*"
               paragraph-start "^[ \t]*$"
               paragraph-separate "^[ \t]*$"
               paragraph-ignore-fill-prefix t
@@ -2288,9 +2248,9 @@ Mainly it chooses beetween `data ... run' and `data= .'."
               comment-end-skip "[*]/"
               comment-column 50
               syntax-propertize-function
-                (syntax-propertize-rules
-                             ("^[ ]*\\([*]\\)" (1 "< b"))
-                             (";[ ]*\\(\n\\)" (1 "> b")))
+              (syntax-propertize-rules
+               ("^[ ]*\\([*]\\)" (1 "< b"))
+               (";[ ]*\\(\n\\)" (1 "> b")))
               smie-indent-basic 2
               smie-blink-matching-inners nil
               smie-blink-matching-triggers
@@ -2304,8 +2264,10 @@ Mainly it chooses beetween `data ... run' and `data= .'."
         '(sas-mode-font-lock-defaults nil t)))
 (add-hook 'sas-mode-hook 'sas--initialize)
 
-;; autoload
+;;;### autoload
 (add-to-list 'auto-mode-alist '("\\.[Ss][Aa][Ss]\\'" . sas-mode))
+(add-to-list 'hs-special-modes-alist
+             '(sas-mode "proc\\|data\\|%macro\\|do\\|%do" "run\\|%mend[ \t\n]+[a-z_0-9]\\|end\\|%end" "/[*]\\|^[ \t]*[*]"))
 
 (provide 'sas)
 ;;; sas.el ends here
