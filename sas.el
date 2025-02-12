@@ -1,6 +1,6 @@
 ;;; sas.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 1997-2024 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2025 Free Software Foundation, Inc.
 ;;
 ;; Author: Pierre-André Cornillon <https://github.com/pac>
 ;; Author: Fabián E. Gallina <fgallina@gnu.org>
@@ -9,8 +9,8 @@
 ;; Author: Richard M. Heiberger <rmh@temple.edu>
 ;; Maintainer: Pierre-André Cornillon <pierre-andre.cornillon@univ-rennes2.fr>
 ;; Created: april 28, 2021
-;; Modified: 2024-03-06
-;; Version: 1.0.1
+;; Modified: 2025-02-06
+;; Version: 1.0.2
 ;; Keywords: languages
 ;; Homepage: https://github.com/
 ;; Package-Requires: ((emacs "27.1"))
@@ -376,29 +376,34 @@ If REALSESSION is non nil it run sas in comint buffer
         (= (prefix-numeric-value current-prefix-arg) 4))
      (list (sas-shell-calculate-command) nil t)))
   (if (or realsession sas-realsession)
-  (let ((buffer
-         (sas-shell-make-comint
-          (or cmd (sas-shell-calculate-command))
-          (sas-shell-get-process-name dedicated)
-          dedicated show nil logseparated))
-        (window (selected-window)))
-    (if sas-graphics-global-figures-output
-        (let ((prestring
-              (progn
-                (if (file-directory-p (sas-graphics-get-directory-of-figures))
-                    (sas-clear-all-figures)
-                  (make-directory (sas-graphics-get-directory-of-figures)))
-                (concat "filename curdir \""
-                        sas-graphics-directory
-                        "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))))
-          (if sas-graphics-global-automatic-figures-display
-              (file-notify-add-watch (sas-graphics-get-directory-of-figures)
-                  '(change)  'sas-graphics-figure-created-callback))
-          (sas-shell-send-string prestring (get-buffer-process buffer))))
-   (pop-to-buffer buffer)
-   (select-window window)
-    (get-buffer-process buffer))
-  (sas-make-fakesession 't sas-user-library)))
+      (let ((buffer
+             (sas-shell-make-comint
+              (or cmd (sas-shell-calculate-command))
+              (sas-shell-get-process-name dedicated)
+              dedicated show nil logseparated))
+            (window (selected-window)))
+        (if sas-graphics-global-figures-output
+            ;; if graphics handling let us add some sas output options
+            (let ((prestring
+                   (progn
+                     (if (file-directory-p (sas-graphics-get-directory-of-figures))
+                         (sas-clear-all-figures)
+                       (make-directory (sas-graphics-get-directory-of-figures)))
+                     (concat "filename curdir \""
+                             sas-graphics-directory
+                             "\" ;\n goptions device=" sas-graphics-format " gsfname=curdir ;\n ods listing gpath=curdir;\n ods graphics on / imagefmt=" sas-graphics-format " ; \n"))))
+              ;; and take care of output if needed
+              (if sas-graphics-global-automatic-figures-display
+                  (file-notify-add-watch (sas-graphics-get-directory-of-figures)
+                                         '(change)  'sas-graphics-figure-created-callback))
+              ;; sending these graphics options to sas
+              (sas-shell-send-string prestring (get-buffer-process buffer))))
+        ;; sending print table macro (to view 3first and 3 last lines when ask to view table)
+        (sas-shell-send-string (concat sas-printmacro "/* -------- end of sas mode options --------*/\n") (get-buffer-process buffer))
+        (pop-to-buffer buffer)
+        (select-window window)
+        (get-buffer-process buffer))
+    (sas-make-fakesession 't sas-user-library)))
 
 (defun sas-shell-calculate-command ()
 "Calculate the string used to execute the inferior Sas process."
@@ -965,42 +970,43 @@ to skip the first displacement to the end of statement."
   (if (not redo)
       (sas-end-of-sas-statement))
   (let (nameproc (case-fold-search t))
-    (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\|run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;\\)" (point-min) t)
+    (if (re-search-backward "\\([ \t\n]+\\|^\\)\\(proc\\|data[ \t\n]+\\|%macro[ \t\n]*\\)" (point-min) t)
+        ;; \\|run[ \t\n]*;\\|%mend[ \t\n]+[a-z_0-9]+[ \t\n]*;\\|%mend[ \t\n]*;
         (progn
-          (pcase (substring (match-string 2) 0 4)
-        ('"data"
-        (if (or (sas-syntax-context 'comment)
-                (looking-at "\\([ \t\n]\\|^\\)+data[ \t\n]+="))
-            ;; comment or data=... redo search
-            (sas-beginning-of-sas-proc 't))
-        "data_block")
-          ('"proc"
-           (if (sas-syntax-context 'comment)
-               (sas-beginning-of-sas-proc 't)
-            (if (looking-at "proc[ \t\n]+\\([A-Za-z]+\\)")
-                (concat "proc_"(match-string 1))
-              "error")))
-          ('"%mac"
-           (if (sas-syntax-context 'comment)
-               (sas-beginning-of-sas-proc 't)
-           (if (looking-at "%macro[ \t\n]+\\([A-Za-z]+\\)")
-                (concat "macr_"(match-string 1))
-              "error")))
-          ('"%men"
-          (if (sas-syntax-context 'comment)
-               (sas-beginning-of-sas-proc 't)
-            "closingmacro"))
-          ('"run"
-          (if (sas-syntax-context 'comment)
-               (sas-beginning-of-sas-proc 't)
-           "closingrun"))
-          (_
-           (beginning-of-line)
-           "error")))
-            ;; noblockfound
-            (progn
-               (beginning-of-line)
-                "noblockfound"))))
+          (pcase (downcase (substring (match-string 2) 0 4))
+            ('"data"
+             (if (or (sas-syntax-context 'comment)
+                     (looking-at "\\([ \t\n]\\|^\\)+data[ \t\n]+="))
+                 ;; comment or data=... redo search
+                 (sas-beginning-of-sas-proc 't))
+             "data_block")
+            ('"proc"
+             (if (sas-syntax-context 'comment)
+                 (sas-beginning-of-sas-proc 't)
+               (if (looking-at "proc[ \t\n]+\\([A-Za-z]+\\)")
+                   (concat "proc_" (downcase (match-string 1)))
+                 "error")))
+            ('"%mac"
+             (if (sas-syntax-context 'comment)
+                 (sas-beginning-of-sas-proc 't)
+               (if (looking-at "%macro[ \t\n]+\\([A-Za-z]+\\)")
+                   (concat "macr_" (downcase (match-string 1)))
+                 "error")))
+            ;; ('"%men"
+            ;;  (if (sas-syntax-context 'comment)
+            ;;      (sas-beginning-of-sas-proc 't)
+            ;;    "closingmacro"))
+            ;; ('"run;"
+            ;;  (if (sas-syntax-context 'comment)
+            ;;      (sas-beginning-of-sas-proc 't)
+            ;;    "closingrun"))
+            (_
+             (beginning-of-line)
+             "error")))
+      ;; noblockfound
+      (progn
+        (beginning-of-line)
+        "noblockfound"))))
 
 
 (defun sas-end-of-sas-proc (blocktype &optional plusone redo)
@@ -1190,6 +1196,40 @@ If EDIT is not nil fsview in edit mode else browseonly."
   (let ((lookfor-table (or table (sas--get-point-symbol))))
     (sas-fsview-table lookfor-table 't)))
 
+(defvar sas-printmacro
+"%macro sasmodeprint(sastable, seuil=5);
+       %let mydataID=%sysfunc(OPEN(&sastable., IN));
+       %let NOBS=%sysfunc(ATTRN(&mydataID., NOBS));
+       %let RC=%sysfunc(CLOSE(&mydataID.));
+       %let Nmini=%eval(2 * &seuil. + 1);
+       %IF  (&nobs. > &Nmini.) %THEN %DO;
+         data sasmodetemptabbeg /view = sasmodetemptabbeg;
+              OrigLine=_N_;
+              set &sastable. (obs=&seuil.);
+         run;
+         %let Nmini=%eval(&nobs. - &seuil. + 1);
+         data  sasmodetemptablast/view =  sasmodetemptablast;
+               OrigLine=_N_ + &Nmini. -1;
+               set &sastable. (obs = &NOBS. firstobs = &Nmini.);
+         run;
+         data sasmodetemptab /view = sasmodetemptab;
+              set sasmodetemptabbeg sasmodetemptablast;
+         run;
+         proc print data=sasmodetemptab NOOBS;
+         run;
+         %END;
+       %ELSE %DO;
+         proc print data=&sastable.;
+         run;
+       %END;
+%mend;\n")
+
+(defun sas-view-table-printcommand (table)
+  "Sas print command for TABLE."
+  (if sas-view-maxnumber-of-rows
+ (concat "%sasmodeprint(" table ", seuil=" (number-to-string sas-view-maxnumber-of-rows) ");")
+ (concat "proc print data=" table "; run;")))
+
 (defun sas-view-table  (&optional table)
   "Launch a proc print on TABLE or region or point."
    (interactive
@@ -1198,21 +1238,15 @@ If EDIT is not nil fsview in edit mode else browseonly."
          "SAS Table: ")
         nil)))
    (let* ((lookfor-table (or table (sas--get-point-symbol)))
-          (sas-command
-           (concat "proc print data="
-                   lookfor-table
-                   (if sas-view-maxnumber-of-rows
-                       (concat "(obs="
-                               (number-to-string sas-view-maxnumber-of-rows)
-                               ");"))
-                   "run;")))
+          (sas-command (sas-view-table-printcommand lookfor-table)
+           ))
     (if sas-realsession
         (let ((process (sas-shell-get-process-or-error nil)))
           (when sas-verbose (message "Sent: %s" sas-command))
           (sas-shell-send-string sas-command process))
-      (progn
-        (when sas-verbose (message "Sent: %s" sas-command))
-        (sas-send-string-with-shell-command sas-command sas-buffer-user-library)))))
+        (let ((commandplusmacro (concat sas-printmacro sas-command)))
+          (when sas-verbose (message "Sent: %s" sas-command))
+          (sas-send-string-with-shell-command commandplusmacro sas-buffer-user-library)))))
 
 (defun sas-graphics-figure-created-callback (event)
   "Open the graphic file."
