@@ -5,7 +5,7 @@ sas mode for emacs
       directory (for example the directory
       =/home/foouser/.emacs.d/lisp=)
 
-   2. To use SAS as another babel language, add the following to your
+   2. To use SAS mode, add the following to your
       =.emacs=
       #+begin_src emacs-lisp
       (load "/home/foouser/.emacs.d/lisp/sas.el")
